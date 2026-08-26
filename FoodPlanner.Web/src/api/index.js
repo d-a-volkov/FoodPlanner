@@ -1,0 +1,43 @@
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api',
+  headers: { 'Content-Type': 'application/json' }
+})
+
+export const productsApi = {
+  getAll: () => api.get('/products'),
+  getById: (id) => api.get(`/products/${id}`),
+  getByZone: (zone) => api.get(`/products/zone/${zone}`),
+  getByCategory: (category) => api.get(`/products/category/${category}`),
+  getByStatus: (status) => api.get(`/products/status/${status}`),
+  search: (q) => api.get('/products/search', { params: { q } }),
+  create: (product) => api.post('/products', product),
+  update: (id, product) => api.put(`/products/${id}`, product),
+  delete: (id) => api.delete(`/products/${id}`)
+}
+
+export const recipesApi = {
+  getAll: () => api.get('/recipes'),
+  getById: (id) => api.get(`/recipes/${id}`),
+  create: (recipe) => api.post('/recipes', recipe),
+  update: (id, recipe) => api.put(`/recipes/${id}`, recipe),
+  delete: (id) => api.delete(`/recipes/${id}`),
+  match: (availableProducts) => api.post('/recipes/match', availableProducts)
+}
+
+export const harvardPlateApi = {
+  getAnalysis: () => api.get('/harvardplate/analysis'),
+  getMatchingRecipes: () => api.get('/harvardplate/recipes')
+}
+
+export const shoppingListsApi = {
+  getAll: () => api.get('/shoppinglists'),
+  getById: (id) => api.get(`/shoppinglists/${id}`),
+  createFromRecipe: (recipeId) => api.post(`/shoppinglists/from-recipe/${recipeId}`),
+  merge: (list1, list2) => api.post(`/shoppinglists/merge?list1=${list1}&list2=${list2}`),
+  togglePurchased: (listId, itemId) => api.put(`/shoppinglists/${listId}/items/${itemId}/toggle`),
+  delete: (id) => api.delete(`/shoppinglists/${id}`)
+}
+
+export default api

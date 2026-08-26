@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="FoodPlanner.Api/FoodPlanner.Api.csproj" />
+  <Project Path="FoodPlanner.Bot.Telegram/FoodPlanner.Bot.Telegram.csproj" />
+  <Project Path="FoodPlanner.Bot.VK/FoodPlanner.Bot.VK.csproj" />
+  <Project Path="FoodPlanner.Core/FoodPlanner.Core.csproj" />
+  <Project Path="FoodPlanner.Data/FoodPlanner.Data.csproj" />
+  <Project Path="FoodPlanner.Seed/FoodPlanner.Seed.csproj" />
+  <Project Path="FoodPlanner.Services/FoodPlanner.Services.csproj" />
+  <Project Path="FoodPlanner.Web/FoodPlanner.Web.csproj" />
+</Solution>
