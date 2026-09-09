@@ -1,6 +1,7 @@
 using FoodPlanner.Core.Interfaces;
 using FoodPlanner.Core.Models;
 using FoodPlanner.Data.Services;
+using FoodPlanner.Services.ExternalRecipe;
 using FoodPlanner.Services.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,18 @@ builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
 builder.Services.AddScoped<IHarvardPlateService, HarvardPlateService>();
 builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
+builder.Services.AddScoped<IExternalRecipeService, ExternalRecipeService>();
+
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient("ExternalRecipes", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+    client.DefaultRequestHeaders.Accept.ParseAdd(
+        "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8");
+    client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("ru-RU,ru;q=0.9,en;q=0.8");
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

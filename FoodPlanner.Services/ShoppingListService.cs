@@ -27,7 +27,8 @@ public class ShoppingListService : IShoppingListService
         Recipe recipe, List<Product> availableProducts)
     {
         var availableProductIds = availableProducts
-            .Where(p => p.StockStatus == StockStatus.InStock || p.HasReserve)
+            .Where(p => p.StockStatus != StockStatus.NotUsed &&
+                        (p.StockStatus == StockStatus.InStock || p.HasReserve))
             .Select(p => p.Id)
             .ToHashSet();
 
@@ -35,13 +36,18 @@ public class ShoppingListService : IShoppingListService
 
         foreach (var ingredient in recipe.Ingredients)
         {
-            if (!availableProductIds.Contains(ingredient.ProductId))
+            if (!ingredient.ProductId.HasValue) continue;
+
+            var product = await _productService.GetByIdAsync(ingredient.ProductId.Value);
+            if (product == null) continue;
+            if (product.StockStatus == StockStatus.NotUsed) continue;
+
+            if (!availableProductIds.Contains(ingredient.ProductId.Value))
             {
-                var product = await _productService.GetByIdAsync(ingredient.ProductId);
                 items.Add(new ShoppingItem
                 {
-                    ProductId = ingredient.ProductId,
-                    ProductName = product?.Name ?? "Неизвестный продукт",
+                    ProductId = ingredient.ProductId.Value,
+                    ProductName = product.Name,
                     Amount = ingredient.Amount,
                     Unit = ingredient.Unit,
                     IsPurchased = false,
@@ -53,6 +59,37 @@ public class ShoppingListService : IShoppingListService
         var shoppingList = new ShoppingList
         {
             Name = $"Для рецепта: {recipe.Name}",
+            Items = items,
+            CreatedDate = DateTime.UtcNow
+        };
+
+        return await _storage.CreateAsync(shoppingList);
+    }
+
+    public async Task<ShoppingList> CreateFromOutOfStockAsync(string? name = null)
+    {
+        var products = await _productService.GetAllAsync();
+        var outOfStock = products
+            .Where(p => p.StockStatus == StockStatus.OutOfStock)
+            .OrderBy(p => p.Name)
+            .ToList();
+
+        if (outOfStock.Count == 0)
+            throw new InvalidOperationException("Отсутствующих продуктов нет — список создавать не нужно.");
+
+        var items = outOfStock.Select(product => new ShoppingItem
+        {
+            ProductId = product.Id,
+            ProductName = product.Name,
+            Amount = 1,
+            Unit = product.DefaultUnit,
+            IsPurchased = false,
+            SourceRecipeName = null
+        }).ToList();
+
+        var shoppingList = new ShoppingList
+        {
+            Name = name ?? $"Список покупок (отсутствующие) {DateTime.Today:dd.MM.yyyy}",
             Items = items,
             CreatedDate = DateTime.UtcNow
         };

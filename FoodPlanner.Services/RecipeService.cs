@@ -38,15 +38,18 @@ public class RecipeService : IRecipeService
 
         foreach (var recipe in recipes)
         {
-            var availableProductIds = availableProducts.Select(p => p.Id).ToHashSet();
+            var availableProductIds = availableProducts
+                .Where(p => p.StockStatus != StockStatus.NotUsed)
+                .Select(p => p.Id)
+                .ToHashSet();
             var matchedIngredients = recipe.Ingredients
-                .Count(i => availableProductIds.Contains(i.ProductId));
+                .Count(i => i.ProductId.HasValue && availableProductIds.Contains(i.ProductId.Value));
             double availability = recipe.Ingredients.Count > 0
                 ? (double)matchedIngredients / recipe.Ingredients.Count * 100
                 : 0;
 
             var missingIngredients = recipe.Ingredients
-                .Where(i => !availableProductIds.Contains(i.ProductId))
+                .Where(i => !i.ProductId.HasValue || !availableProductIds.Contains(i.ProductId.Value))
                 .ToList();
 
             matches.Add(new RecipeMatch

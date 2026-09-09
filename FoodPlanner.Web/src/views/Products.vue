@@ -53,7 +53,8 @@ const stats = computed(() => ({
   total: store.products.length,
   inStock: store.products.filter(p => p.stockStatus === 0).length,
   outOfStock: store.products.filter(p => p.stockStatus === 1).length,
-  lowStock: store.products.filter(p => p.stockStatus === 2).length
+  lowStock: store.products.filter(p => p.stockStatus === 2).length,
+  notUsed: store.products.filter(p => p.stockStatus === 3).length
 }))
 
 onMounted(() => {
@@ -117,6 +118,7 @@ async function toggleStock(product) {
       <div class="stat in-stock">В наличии: <strong>{{ stats.inStock }}</strong></div>
       <div class="stat out-of-stock">Нет: <strong>{{ stats.outOfStock }}</strong></div>
       <div class="stat low-stock">Мало: <strong>{{ stats.lowStock }}</strong></div>
+      <div class="stat not-used">Не используется: <strong>{{ stats.notUsed }}</strong></div>
     </div>
 
     <div class="toolbar">
@@ -160,7 +162,8 @@ async function toggleStock(product) {
                 :class="{
                   'in-stock': product.stockStatus === 0,
                   'out-of-stock': product.stockStatus === 1,
-                  'low-stock': product.stockStatus === 2
+                  'low-stock': product.stockStatus === 2,
+                  'not-used': product.stockStatus === 3
                 }"
                 @click="toggleStock(product)"
                 title="Нажмите, чтобы изменить статус"
@@ -265,6 +268,7 @@ h1 { margin-top: 0; color: #333; }
 .stat.in-stock { border-left: 4px solid #4caf50; }
 .stat.out-of-stock { border-left: 4px solid #f44336; }
 .stat.low-stock { border-left: 4px solid #ff9800; }
+.stat.not-used { border-left: 4px solid #9e9e9e; }
 
 .toolbar {
   display: flex;
@@ -341,6 +345,7 @@ h1 { margin-top: 0; color: #333; }
 .status-badge.in-stock { background: #e8f5e9; color: #4caf50; }
 .status-badge.out-of-stock { background: #ffebee; color: #f44336; }
 .status-badge.low-stock { background: #fff3e0; color: #ff9800; }
+.status-badge.not-used { background: #eceff1; color: #90a4ae; }
 
 .product-name { font-weight: 500; }
 

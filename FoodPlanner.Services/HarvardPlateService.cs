@@ -37,7 +37,8 @@ public class HarvardPlateService : IHarvardPlateService
     {
         var products = await _productService.GetAllAsync();
         var inStockProducts = products
-            .Where(p => p.StockStatus == StockStatus.InStock || p.HasReserve)
+            .Where(p => p.StockStatus != StockStatus.NotUsed &&
+                        (p.StockStatus == StockStatus.InStock || p.HasReserve))
             .ToList();
 
         var categoryGroups = inStockProducts
@@ -84,7 +85,8 @@ public class HarvardPlateService : IHarvardPlateService
     public async Task<List<RecipeMatch>> FindRecipesByAvailableProductsAsync(List<Product> products)
     {
         var availableProducts = products
-            .Where(p => p.StockStatus == StockStatus.InStock || p.HasReserve)
+            .Where(p => p.StockStatus != StockStatus.NotUsed &&
+                        (p.StockStatus == StockStatus.InStock || p.HasReserve))
             .ToList();
 
         return await _recipeService.GetRecipesByAvailableProductsAsync(availableProducts);
@@ -113,7 +115,8 @@ public class HarvardPlateService : IHarvardPlateService
             }
         }
 
-        var proteinProducts = products.Where(p => p.Category == ProductCategory.Proteins).ToList();
+        var activeProducts = products.Where(p => p.StockStatus != StockStatus.NotUsed).ToList();
+        var proteinProducts = activeProducts.Where(p => p.Category == ProductCategory.Proteins).ToList();
         bool hasFish = proteinProducts.Any(p => p.Name.Contains("рыб", StringComparison.OrdinalIgnoreCase));
         bool hasPoultry = proteinProducts.Any(p =>
             p.Name.Contains("куриц", StringComparison.OrdinalIgnoreCase) ||
@@ -124,7 +127,7 @@ public class HarvardPlateService : IHarvardPlateService
         if (!hasPoultry)
             recommendations.Add("Рекомендуется добавить птицу (курицу/индейку) как источник белка.");
 
-        bool hasHealthyFats = products.Any(p => p.Category == ProductCategory.HealthyFats);
+        bool hasHealthyFats = activeProducts.Any(p => p.Category == ProductCategory.HealthyFats);
         if (!hasHealthyFats)
             recommendations.Add("Добавьте полезные жиры: оливковое масло, орехи, авокадо.");
 
@@ -141,7 +144,10 @@ public class HarvardPlateService : IHarvardPlateService
     private List<Product> GetMissingProducts(List<HarvardPlateRatio> ratios, List<Product> allProducts)
     {
         var missing = new List<Product>();
-        var inStock = allProducts
+        var activeProducts = allProducts
+            .Where(p => p.StockStatus != StockStatus.NotUsed)
+            .ToList();
+        var inStock = activeProducts
             .Where(p => p.StockStatus == StockStatus.InStock || p.HasReserve)
             .ToList();
 
@@ -149,7 +155,7 @@ public class HarvardPlateService : IHarvardPlateService
         {
             if (ratio.CurrentPercentage < ratio.RecommendedPercentage - 5)
             {
-                var candidates = allProducts
+                var candidates = activeProducts
                     .Where(p => p.Category == ratio.Category &&
                                 !inStock.Any(ip => ip.Id == p.Id))
                     .Take(3);

@@ -31,10 +31,18 @@ export const harvardPlateApi = {
   getMatchingRecipes: () => api.get('/harvardplate/recipes')
 }
 
+export const externalRecipesApi = {
+  search: (query, source, maxResults) => api.get('/externalrecipes/search', { params: { query, source, maxResults } }),
+  searchByAvailable: (source, maxResults, minAvailability) => api.get('/externalrecipes/search-by-available', { params: { source, maxResults, minAvailability } }),
+  getDetails: (source, url) => api.get('/externalrecipes/detail', { params: { source, url } }),
+  importRecipe: (result) => api.post('/externalrecipes/import', result)
+}
+
 export const shoppingListsApi = {
   getAll: () => api.get('/shoppinglists'),
   getById: (id) => api.get(`/shoppinglists/${id}`),
   createFromRecipe: (recipeId) => api.post(`/shoppinglists/from-recipe/${recipeId}`),
+  createFromOutOfStock: () => api.post('/shoppinglists/from-out-of-stock'),
   merge: (list1, list2) => api.post(`/shoppinglists/merge?list1=${list1}&list2=${list2}`),
   togglePurchased: (listId, itemId) => api.put(`/shoppinglists/${listId}/items/${itemId}/toggle`),
   delete: (id) => api.delete(`/shoppinglists/${id}`)

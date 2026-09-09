@@ -1,4 +1,5 @@
 using FoodPlanner.Core.Enums;
+using FoodPlanner.Core.Models;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -135,6 +136,7 @@ public class BotUpdateHandler
                     StockStatus.InStock => "✅",
                     StockStatus.OutOfStock => "❌",
                     StockStatus.LowStock => "⚠️",
+                    StockStatus.NotUsed => "🚫",
                     _ => "❓"
                 };
                 var reserve = p.HasReserve ? " 🔄" : "";
@@ -241,7 +243,7 @@ public class BotUpdateHandler
             var icon = match.AvailabilityPercentage >= 100 ? "🟢" :
                        match.AvailabilityPercentage >= 50 ? "🟡" : "🔴";
             var missing = match.MissingIngredients.Count > 0
-                ? $" (нет: {string.Join(", ", match.MissingIngredients.Select(i => i.ProductId.ToString().Substring(0, 8)))})"
+                ? $" (нет: {string.Join(", ", match.MissingIngredients.Select(IngredientLabel))})"
                 : " — всё есть!";
             lines.Add($"{icon} <b>{match.Recipe.Name}</b> — {match.AvailabilityPercentage}%{missing}");
         }
@@ -287,7 +289,7 @@ public class BotUpdateHandler
             lines.Add("");
             lines.Add("<b>Ингредиенты:</b>");
             foreach (var ing in recipe.Ingredients)
-                lines.Add($"  • {ing.ProductId} — {ing.Amount} ед.");
+                lines.Add($"  • {IngredientLabel(ing)} — {ing.Amount} ед.");
         }
 
         if (recipe.Steps.Count > 0)
@@ -326,7 +328,7 @@ public class BotUpdateHandler
         foreach (var match in readyRecipes.Take(5))
         {
             var missing = match.MissingIngredients
-                .Select(i => $"{i.ProductId} ({i.Amount} ед.)")
+                .Select(i => $"{IngredientLabel(i)} ({i.Amount} ед.)")
                 .ToList();
             if (missing.Count > 0)
             {
@@ -361,6 +363,12 @@ public class BotUpdateHandler
         StorageZone.HouseholdSupplies => "🧹 Хоз. товары",
         _ => zone.ToString()
     };
+
+    private static string IngredientLabel(RecipeIngredient ingredient)
+        => ingredient.ProductName
+           ?? (ingredient.ProductId.HasValue
+               ? ingredient.ProductId.Value.ToString("N")[..8]
+               : "—");
 
     private static string GetProgressBar(double current, double recommended)
     {

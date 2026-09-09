@@ -4,7 +4,8 @@ namespace FoodPlanner.Core.Models;
 
 public class RecipeIngredient
 {
-    public Guid ProductId { get; set; }
+    public Guid? ProductId { get; set; }
+    public string? ProductName { get; set; }
     public double Amount { get; set; }
     public MeasurementUnit Unit { get; set; } = MeasurementUnit.Grams;
 }

@@ -24,7 +24,8 @@ export const useProductsStore = defineStore('products', () => {
   const STOCK_STATUS = {
     0: { label: 'В наличии', color: 'green', icon: '✓' },
     1: { label: 'Нет в наличии', color: 'red', icon: '✗' },
-    2: { label: 'Мало/пусто', color: 'orange', icon: '○' }
+    2: { label: 'Мало/пусто', color: 'orange', icon: '○' },
+    3: { label: 'Не используется', color: 'gray', icon: '⊘' }
   }
 
   const CATEGORIES = {
@@ -73,7 +74,7 @@ export const useProductsStore = defineStore('products', () => {
   }
 
   async function toggleStock(product) {
-    const newStatus = product.stockStatus === 0 ? 1 : 0
+    const newStatus = (product.stockStatus + 1) % 4
     return updateProduct({ ...product, stockStatus: newStatus })
   }
 

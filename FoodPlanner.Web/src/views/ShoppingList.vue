@@ -36,16 +36,36 @@ async function removeList(id) {
     if (showDetail.value?.id === id) showDetail.value = null
   }
 }
+
+const creatingFromStock = ref(false)
+
+async function createFromOutOfStock() {
+  creatingFromStock.value = true
+  try {
+    const list = await store.createFromOutOfStock()
+    showDetail.value = list
+  } catch (e) {
+    alert(e.response?.data || e.message)
+  } finally {
+    creatingFromStock.value = false
+  }
+}
 </script>
 
 <template>
   <div>
     <h1>Списки покупок</h1>
 
+    <div class="toolbar">
+      <button class="btn btn-primary" :disabled="creatingFromStock" @click="createFromOutOfStock">
+        {{ creatingFromStock ? 'Создание...' : '🛒 Сформировать из отсутствующих' }}
+      </button>
+    </div>
+
     <div v-if="store.loading" class="loading">Загрузка...</div>
 
     <div v-else-if="store.lists.length === 0" class="empty">
-      Списков покупок пока нет. Создайте из рецепта на странице "Рецепты" или "Гарвардская тарелка".
+      Списков покупок пока нет. Создайте из рецепта на странице "Рецепты", "Гарвардская тарелка" или нажмите кнопку выше.
     </div>
 
     <div v-else class="lists-layout">
@@ -116,6 +136,26 @@ async function removeList(id) {
 <style scoped>
 h1 { margin-top: 0; color: #333; }
 h2 { margin-top: 0; }
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+.btn:hover { background: #f5f5f5; }
+.btn-primary { background: #1976d2; color: #fff; border-color: #1976d2; }
+.btn-primary:hover { background: #1565c0; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .lists-layout {
   display: flex;

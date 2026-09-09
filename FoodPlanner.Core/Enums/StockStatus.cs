@@ -4,5 +4,6 @@ public enum StockStatus
 {
     InStock,
     OutOfStock,
-    LowStock
+    LowStock,
+    NotUsed
 }

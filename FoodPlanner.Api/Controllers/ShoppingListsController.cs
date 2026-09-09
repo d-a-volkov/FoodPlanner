@@ -36,6 +36,20 @@ public class ShoppingListsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = list.Id }, list);
     }
 
+    [HttpPost("from-out-of-stock")]
+    public async Task<ActionResult<ShoppingList>> CreateFromOutOfStock([FromQuery] string? name = null)
+    {
+        try
+        {
+            var list = await _service.CreateFromOutOfStockAsync(name);
+            return CreatedAtAction(nameof(GetById), new { id = list.Id }, list);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     [HttpPost("merge")]
     public async Task<ActionResult<ShoppingList>> Merge(
         [FromQuery] Guid list1, [FromQuery] Guid list2)

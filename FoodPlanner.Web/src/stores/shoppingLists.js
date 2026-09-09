@@ -40,6 +40,12 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
     return data
   }
 
+  async function createFromOutOfStock() {
+    const { data } = await shoppingListsApi.createFromOutOfStock()
+    lists.value.push(data)
+    return data
+  }
+
   async function togglePurchased(listId, itemId) {
     const { data } = await shoppingListsApi.togglePurchased(listId, itemId)
     if (currentList.value && currentList.value.id === listId) {
@@ -57,6 +63,6 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
 
   return {
     lists, currentList, loading, error,
-    fetchLists, fetchList, createFromRecipe, togglePurchased, deleteList
+    fetchLists, fetchList, createFromRecipe, createFromOutOfStock, togglePurchased, deleteList
   }
 })

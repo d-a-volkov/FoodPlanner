@@ -3,10 +3,22 @@ import { ref, onMounted } from 'vue'
 import { useRecipesStore } from '../stores/recipes'
 import { useProductsStore } from '../stores/products'
 import { useShoppingListsStore } from '../stores/shoppingLists'
+import { useExternalRecipesStore } from '../stores/externalRecipes'
 
 const recipesStore = useRecipesStore()
 const productsStore = useProductsStore()
 const shoppingStore = useShoppingListsStore()
+const externalStore = useExternalRecipesStore()
+
+const SOURCE_OPTIONS = [
+  { value: '', label: 'Все источники' },
+  { value: 0, label: '1000.menu' },
+  { value: 1, label: 'food.ru' }
+]
+
+function sourceName(value) {
+  return value === 0 ? '1000.menu' : value === 1 ? 'food.ru' : ''
+}
 
 const showAddModal = ref(false)
 const editingRecipe = ref(null)
@@ -117,6 +129,21 @@ async function createShoppingList(recipe) {
     alert('Ошибка: ' + e.message)
   }
 }
+
+async function runExternalSearch() {
+  if (externalStore.mode === 'query' && !externalStore.query.trim()) return
+  await externalStore.search()
+}
+
+async function importExternalRecipe(result) {
+  try {
+    await externalStore.importRecipe(result)
+    await recipesStore.fetchRecipes()
+    alert('Рецепт импортирован!')
+  } catch (e) {
+    alert('Ошибка импорта: ' + (e.response?.data || e.message))
+  }
+}
 </script>
 
 <template>
@@ -131,6 +158,79 @@ async function createShoppingList(recipe) {
         class="search-input"
       />
       <button class="btn btn-primary" @click="openAdd">+ Новый рецепт</button>
+    </div>
+
+    <div class="extern-card">
+      <div class="extern-header">
+        <h2>Поиск рецептов в интернете</h2>
+        <span class="extern-hint">1000.menu и food.ru. Найденные рецепты можно импортировать в свой список.</span>
+      </div>
+      <div class="extern-controls">
+        <div class="extern-modes">
+          <button
+            class="btn btn-small"
+            :class="{ 'btn-primary': externalStore.mode === 'query' }"
+            @click="externalStore.mode = 'query'"
+          >По названию</button>
+          <button
+            class="btn btn-small"
+            :class="{ 'btn-primary': externalStore.mode === 'available' }"
+            @click="externalStore.mode = 'available'"
+          >По имеющимся продуктам</button>
+        </div>
+        <select v-model="externalStore.source" class="filter-select">
+          <option v-for="opt in SOURCE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <input
+          v-if="externalStore.mode === 'query'"
+          v-model="externalStore.query"
+          type="text"
+          placeholder="Например: борщ, сырники..."
+          class="search-input"
+          @keyup.enter="runExternalSearch"
+        />
+        <button class="btn btn-primary" :disabled="externalStore.loading" @click="runExternalSearch">
+          {{ externalStore.loading ? 'Поиск...' : 'Найти' }}
+        </button>
+      </div>
+
+      <div v-if="externalStore.error" class="extern-error">{{ externalStore.error }}</div>
+
+      <div v-if="externalStore.loading" class="loading">Поиск рецептов...</div>
+
+      <div v-else-if="externalStore.results.length" class="extern-grid">
+        <div v-for="(result, idx) in externalStore.results" :key="idx" class="extern-card-item">
+          <div class="extern-thumb">
+            <img
+              v-if="result.imageUrl"
+              :src="result.imageUrl"
+              :alt="result.title"
+              loading="lazy"
+            />
+          </div>
+          <div class="extern-body">
+            <div class="extern-title-row">
+              <h4>{{ result.title }}</h4>
+              <span class="extern-badge">{{ sourceName(result.source) }}</span>
+            </div>
+            <div v-if="result.availabilityPercentage !== null && result.availabilityPercentage !== undefined" class="extern-availability">
+              Доступно продуктов: <strong>{{ result.availabilityPercentage }}%</strong>
+            </div>
+            <p v-if="result.description" class="extern-desc">{{ result.description }}</p>
+            <div class="recipe-meta">
+              <span v-if="result.preparationTimeMinutes" class="meta-tag">⏱ {{ result.preparationTimeMinutes }} мин</span>
+              <span v-if="result.servings" class="meta-tag">👥 {{ result.servings }}</span>
+              <span v-if="result.ingredients?.length" class="meta-tag">🧺 {{ result.ingredients.length }} ингр.</span>
+            </div>
+            <div class="extern-actions">
+              <a :href="result.url" target="_blank" rel="noopener" class="btn btn-small">Открыть</a>
+              <button class="btn btn-small btn-primary" :disabled="externalStore.loading" @click="importExternalRecipe(result)">
+                Импортировать
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-if="recipesStore.loading" class="loading">Загрузка...</div>
@@ -308,6 +408,73 @@ h1 { margin-top: 0; color: #333; }
 .ingredient-text { display: inline; margin-left: 6px; }
 .ingredient-text.more { color: #999; }
 .recipe-actions { display: flex; gap: 6px; }
+
+.extern-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  margin-bottom: 24px;
+}
+.extern-header { margin-bottom: 12px; }
+.extern-header h2 { margin: 0 0 4px; color: #333; font-size: 1.1rem; }
+.extern-hint { color: #888; font-size: 0.85rem; }
+.extern-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.extern-modes { display: flex; gap: 6px; }
+.extern-controls .search-input { flex: 1; min-width: 180px; }
+.filter-select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.extern-error { color: #f44336; margin-top: 12px; font-size: 0.9rem; }
+.extern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.extern-card-item {
+  display: flex;
+  gap: 12px;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fafafa;
+}
+.extern-thumb {
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eee;
+}
+.extern-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.extern-body { flex: 1; min-width: 0; }
+.extern-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.extern-title-row h4 { margin: 0; font-size: 0.95rem; color: #333; }
+.extern-badge {
+  background: #e8eaf6;
+  color: #3f51b5;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.extern-availability { color: #2e7d32; font-size: 0.8rem; margin-top: 4px; }
+.extern-desc {
+  color: #666;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin: 6px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.extern-actions { display: flex; gap: 6px; margin-top: 8px; }
 
 .btn {
   padding: 8px 16px;
