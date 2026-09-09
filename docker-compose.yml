@@ -1,0 +1,23 @@
+services:
+  foodplanner-api:
+    image: foodplanner-api:1.0.0
+    build:
+      context: .
+      dockerfile: FoodPlanner.Api/Dockerfile
+    ports:
+      - "7215:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      DataPath: /data
+      FrontendPath: /app/webdist
+    volumes:
+      - foodplanner_data:/data
+    networks:
+      - foodplanner-net
+    restart: unless-stopped
+
+volumes:
+  foodplanner_data:
+
+networks:
+  foodplanner-net:

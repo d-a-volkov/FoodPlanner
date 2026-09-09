@@ -1,0 +1,15 @@
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/.vs
+**/.vscode
+**/.git
+.gitignore
+**/*.xlsx
+**/*.log
+**/.env
+**/secrets.json
+Dockerfile*
+docker-compose.yml
+.env.example
