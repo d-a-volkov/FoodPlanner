@@ -49,6 +49,58 @@ const groupedProducts = computed(() => {
   return groups
 })
 
+const collapsedZones = ref(JSON.parse(localStorage.getItem('collapsedZones') || '{}'))
+
+function isCollapsed(zone) {
+  return !!collapsedZones.value[zone]
+}
+
+function toggleZone(zone) {
+  collapsedZones.value[zone] = !collapsedZones.value[zone]
+  localStorage.setItem('collapsedZones', JSON.stringify(collapsedZones.value))
+}
+
+function zoneCounts(products) {
+  const total = products.length
+  const inStock = products.filter(p => p.stockStatus === 0).length
+  return { inStock, total }
+}
+
+const showZonesModal = ref(false)
+const newZoneName = ref('')
+
+function zoneProductCount(zone) {
+  return store.products.filter(p => p.storageZone === Number(zone)).length
+}
+
+function addZone() {
+  const name = newZoneName.value.trim()
+  if (!name) return
+  newZoneName.value = ''
+  store.addZone(name)
+}
+
+async function removeZone(zone) {
+  const zoneId = Number(zone)
+  const name = store.getZoneName(zoneId)
+  const count = zoneProductCount(zone)
+  if (Object.keys(store.zones).length <= 1) {
+    alert('Нельзя удалить последнюю зону')
+    return
+  }
+  if (count > 0) {
+    const targetId = store.fallbackZone(zoneId)
+    const targetName = store.getZoneName(targetId)
+    if (!confirm(`В зоне «${name}» — ${count} прод. Переместить их в «${targetName}» и удалить зону?`)) return
+  } else if (!confirm(`Удалить зону «${name}»?`)) return
+  await store.removeZone(zoneId)
+  if (Object.prototype.hasOwnProperty.call(collapsedZones.value, String(zoneId))) {
+    delete collapsedZones.value[String(zoneId)]
+    localStorage.setItem('collapsedZones', JSON.stringify(collapsedZones.value))
+  }
+  if (filterZone.value === String(zoneId)) filterZone.value = ''
+}
+
 const stats = computed(() => ({
   total: store.products.length,
   inStock: store.products.filter(p => p.stockStatus === 0).length,
@@ -130,12 +182,13 @@ async function toggleStock(product) {
       />
       <select v-model="filterZone" class="filter-select">
         <option value="">Все зоны</option>
-        <option v-for="(name, key) in store.STORAGE_ZONES" :key="key" :value="key">{{ name }}</option>
+        <option v-for="(name, key) in store.zones" :key="key" :value="key">{{ name }}</option>
       </select>
       <select v-model="filterStatus" class="filter-select">
         <option value="">Все статусы</option>
         <option v-for="(info, key) in store.STOCK_STATUS" :key="key" :value="key">{{ info.label }}</option>
       </select>
+      <button class="btn" @click="showZonesModal = true">⚙ Зоны</button>
       <button class="btn btn-primary" @click="openAdd">+ Добавить продукт</button>
     </div>
 
@@ -143,8 +196,12 @@ async function toggleStock(product) {
     <div v-else-if="store.error" class="error">{{ store.error }}</div>
 
     <div v-for="(products, zone) in groupedProducts" :key="zone" class="zone-group">
-      <h2 class="zone-title">{{ store.getZoneName(Number(zone)) }}</h2>
-      <table class="products-table">
+      <button type="button" class="zone-header" @click="toggleZone(zone)">
+        <span class="zone-caret">{{ isCollapsed(zone) ? '▸' : '▾' }}</span>
+        <span class="zone-name">{{ store.getZoneName(Number(zone)) }}</span>
+        <span class="zone-counts">{{ zoneCounts(products).inStock }} в наличии / {{ zoneCounts(products).total }} всего</span>
+      </button>
+      <table v-if="!isCollapsed(zone)" class="products-table">
         <thead>
           <tr>
             <th>Статус</th>
@@ -201,7 +258,7 @@ async function toggleStock(product) {
             <div class="form-group">
               <label>Зона хранения</label>
               <select v-model="form.storageZone">
-                <option v-for="(name, key) in store.STORAGE_ZONES" :key="key" :value="Number(key)">{{ name }}</option>
+                <option v-for="(name, key) in store.zones" :key="key" :value="Number(key)">{{ name }}</option>
               </select>
             </div>
             <div class="form-group">
@@ -245,6 +302,31 @@ async function toggleStock(product) {
             <button type="submit" class="btn btn-primary">Сохранить</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div v-if="showZonesModal" class="modal-overlay" @click.self="showZonesModal = false">
+      <div class="modal">
+        <h2>Зоны хранения</h2>
+        <div class="zone-edit-list">
+          <div v-for="(name, key) in store.zones" :key="key" class="zone-edit-item">
+            <span class="zone-edit-name">{{ name }}</span>
+            <span class="zone-edit-count">{{ zoneProductCount(key) }} прод.</span>
+            <button type="button" class="btn btn-small btn-danger" @click="removeZone(key)">✕</button>
+          </div>
+        </div>
+        <div class="add-zone-row">
+          <input
+            v-model="newZoneName"
+            type="text"
+            placeholder="Новая зона..."
+            @keyup.enter="addZone"
+          />
+          <button type="button" class="btn btn-primary" @click="addZone">+ Добавить</button>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" @click="showZonesModal = false">Готово</button>
+        </div>
       </div>
     </div>
   </div>
@@ -303,6 +385,45 @@ h1 { margin-top: 0; color: #333; }
   margin-bottom: 8px;
   padding-bottom: 5px;
   border-bottom: 2px solid #e0e0e0;
+}
+
+.zone-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 1.1rem;
+  color: #555;
+  margin-bottom: 8px;
+  padding: 2px 0 5px;
+  border-bottom: 2px solid #e0e0e0;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.zone-caret {
+  font-size: 0.75rem;
+  color: #999;
+  width: 14px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.zone-name { font-weight: 600; color: #444; margin-right: auto; }
+
+.zone-counts {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: 400;
+  white-space: nowrap;
+  background: #fff;
+  border-radius: 12px;
+  padding: 3px 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
 
 .products-table {
@@ -423,6 +544,38 @@ h1 { margin-top: 0; color: #333; }
   margin-top: 20px;
 }
 
+.zone-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.zone-edit-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 1px solid #eee;
+}
+.zone-edit-name { font-weight: 500; flex: 1; }
+.zone-edit-count { font-size: 0.8rem; color: #888; white-space: nowrap; }
+.add-zone-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.add-zone-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
 @media (max-width: 767px) {
   h1 { font-size: 1.4rem; }
 
@@ -488,6 +641,27 @@ h1 { margin-top: 0; color: #333; }
     flex: 1;
     padding: 12px;
     font-size: 15px;
+  }
+
+  .zone-header {
+    padding: 12px 4px;
+    font-size: 1rem;
+  }
+  .zone-counts {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+  }
+
+  .zone-edit-item {
+    padding: 12px;
+  }
+  .zone-edit-item .btn-small {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  .add-zone-row .btn {
+    padding: 12px;
+    font-size: 14px;
   }
 }
 </style>

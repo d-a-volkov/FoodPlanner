@@ -2,12 +2,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { productsApi } from '../api'
 
-export const useProductsStore = defineStore('products', () => {
-  const products = ref([])
-  const loading = ref(false)
-  const error = ref(null)
-
-  const STORAGE_ZONES = {
+function defaultZones() {
+  return {
     0: 'Холодильник',
     1: 'Овощи и фрукты',
     2: 'Молочные продукты',
@@ -19,6 +15,60 @@ export const useProductsStore = defineStore('products', () => {
     8: 'Специи и приправы',
     9: 'Кофе и чай',
     10: 'Хоз. товары'
+  }
+}
+
+function loadZones() {
+  try {
+    const stored = localStorage.getItem('storageZones')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) return parsed
+    }
+  } catch (e) {
+    // ignore corrupted storage
+  }
+  return defaultZones()
+}
+
+export const useProductsStore = defineStore('products', () => {
+  const products = ref([])
+  const loading = ref(false)
+  const error = ref(null)
+
+  const zones = ref(loadZones())
+
+  function persistZones() {
+    localStorage.setItem('storageZones', JSON.stringify(zones.value))
+  }
+
+  function addZone(name) {
+    const keys = Object.keys(zones.value).map(Number)
+    const nextId = keys.length ? Math.max(...keys) + 1 : 0
+    zones.value[String(nextId)] = name
+    persistZones()
+    return nextId
+  }
+
+  function fallbackZone(excludeId) {
+    const keys = Object.keys(zones.value).map(Number).sort((a, b) => a - b)
+    return keys.find(k => k !== excludeId)
+  }
+
+  async function removeZone(zoneId) {
+    const id = Number(zoneId)
+    if (!Object.prototype.hasOwnProperty.call(zones.value, String(id))) return false
+    if (Object.keys(zones.value).length <= 1) return false
+    const productsInZone = products.value.filter(p => p.storageZone === id)
+    if (productsInZone.length) {
+      const targetId = fallbackZone(id)
+      for (const p of productsInZone) {
+        await updateProduct({ ...p, storageZone: targetId })
+      }
+    }
+    delete zones.value[String(id)]
+    persistZones()
+    return true
   }
 
   const STOCK_STATUS = {
@@ -79,7 +129,7 @@ export const useProductsStore = defineStore('products', () => {
   }
 
   function getZoneName(zone) {
-    return STORAGE_ZONES[zone] ?? 'Неизвестно'
+    return zones.value[zone] ?? 'Неизвестно'
   }
 
   function getStatusInfo(status) {
@@ -101,9 +151,10 @@ export const useProductsStore = defineStore('products', () => {
   }
 
   return {
-    products, loading, error,
+    products, loading, error, zones,
     fetchProducts, addProduct, updateProduct, deleteProduct, toggleStock,
     getZoneName, getStatusInfo, getCategoryName, groupedByZone,
-    STORAGE_ZONES, STOCK_STATUS, CATEGORIES
+    addZone, removeZone, fallbackZone,
+    STOCK_STATUS, CATEGORIES
   }
 })
