@@ -66,22 +66,26 @@ public class ShoppingListService : IShoppingListService
         return await _storage.CreateAsync(shoppingList);
     }
 
-    public async Task<ShoppingList> CreateFromOutOfStockAsync(string? name = null)
+    public async Task<ShoppingList> CreateFromOutOfStockAsync(string? name = null, bool includeLowStock = false)
     {
         var products = await _productService.GetAllAsync();
-        var outOfStock = products
-            .Where(p => p.StockStatus == StockStatus.OutOfStock)
+        var notable = products
+            .Where(p => p.StockStatus == StockStatus.OutOfStock ||
+                        (includeLowStock && p.StockStatus == StockStatus.LowStock))
             .OrderBy(p => p.Name)
             .ToList();
 
-        if (outOfStock.Count == 0)
-            throw new InvalidOperationException("Отсутствующих продуктов нет — список создавать не нужно.");
+        if (notable.Count == 0)
+            throw new InvalidOperationException(
+                includeLowStock
+                    ? "Отсутствующих и «мало» продуктов нет — список создавать не нужно."
+                    : "Отсутствующих продуктов нет — список создавать не нужно.");
 
-        var items = outOfStock.Select(product => new ShoppingItem
+        var items = notable.Select(product => new ShoppingItem
         {
             ProductId = product.Id,
             ProductName = product.Name,
-            Amount = 1,
+            Amount = product.StockStatus == StockStatus.LowStock ? 0 : 1,
             Unit = product.DefaultUnit,
             IsPurchased = false,
             SourceRecipeName = null
@@ -89,7 +93,7 @@ public class ShoppingListService : IShoppingListService
 
         var shoppingList = new ShoppingList
         {
-            Name = name ?? $"Список покупок (отсутствующие) {DateTime.Today:dd.MM.yyyy}",
+            Name = name ?? $"Список покупок {(includeLowStock ? "(отсутствующие и мало)" : "(отсутствующие)")} {DateTime.Today:dd.MM.yyyy}",
             Items = items,
             CreatedDate = DateTime.UtcNow
         };
@@ -154,6 +158,20 @@ public class ShoppingListService : IShoppingListService
         item.IsPurchased = !item.IsPurchased;
         await _storage.SaveAllAsync(lists);
         return item;
+    }
+
+    public async Task<bool> DeleteItemAsync(Guid listId, Guid itemId)
+    {
+        var lists = await _storage.GetAllAsync();
+        var list = lists.FirstOrDefault(l => l.Id == listId);
+        if (list == null) return false;
+
+        var item = list.Items.FirstOrDefault(i => i.Id == itemId);
+        if (item == null) return false;
+
+        list.Items.Remove(item);
+        await _storage.SaveAllAsync(lists);
+        return true;
     }
 
     public async Task<bool> DeleteAsync(Guid id)

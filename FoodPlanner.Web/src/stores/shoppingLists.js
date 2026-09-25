@@ -40,8 +40,8 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
     return data
   }
 
-  async function createFromOutOfStock() {
-    const { data } = await shoppingListsApi.createFromOutOfStock()
+  async function createFromOutOfStock(includeLowStock = false) {
+    const { data } = await shoppingListsApi.createFromOutOfStock(includeLowStock)
     lists.value.push(data)
     return data
   }
@@ -55,6 +55,15 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
     return data
   }
 
+  async function removeItem(listId, itemId) {
+    await shoppingListsApi.deleteItem(listId, itemId)
+    if (currentList.value && currentList.value.id === listId) {
+      currentList.value.items = currentList.value.items.filter(i => i.id !== itemId)
+    }
+    const list = lists.value.find(l => l.id === listId)
+    if (list) list.items = list.items.filter(i => i.id !== itemId)
+  }
+
   async function deleteList(id) {
     await shoppingListsApi.delete(id)
     lists.value = lists.value.filter(l => l.id !== id)
@@ -63,6 +72,6 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
 
   return {
     lists, currentList, loading, error,
-    fetchLists, fetchList, createFromRecipe, createFromOutOfStock, togglePurchased, deleteList
+    fetchLists, fetchList, createFromRecipe, createFromOutOfStock, togglePurchased, removeItem, deleteList
   }
 })

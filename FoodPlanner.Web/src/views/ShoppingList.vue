@@ -38,17 +38,26 @@ async function removeList(id) {
 }
 
 const creatingFromStock = ref(false)
+const includeLow = ref(localStorage.getItem('includeLowStock') === '1')
 
 async function createFromOutOfStock() {
   creatingFromStock.value = true
   try {
-    const list = await store.createFromOutOfStock()
+    localStorage.setItem('includeLowStock', includeLow.value ? '1' : '0')
+    const list = await store.createFromOutOfStock(includeLow.value)
     showDetail.value = list
   } catch (e) {
     alert(e.response?.data || e.message)
   } finally {
     creatingFromStock.value = false
   }
+}
+
+async function removeItemFromList(itemId) {
+  const item = showDetail.value?.items.find(i => i.id === itemId)
+  if (!item) return
+  if (!confirm(`Удалить «${item.productName}» из списка?`)) return
+  await store.removeItem(showDetail.value.id, itemId)
 }
 </script>
 
@@ -60,6 +69,10 @@ async function createFromOutOfStock() {
       <button class="btn btn-primary" :disabled="creatingFromStock" @click="createFromOutOfStock">
         {{ creatingFromStock ? 'Создание...' : '🛒 Сформировать из отсутствующих' }}
       </button>
+      <label class="toolbar-toggle">
+        <input v-model="includeLow" type="checkbox" />
+        Включать продукты со статусом «Мало»
+      </label>
     </div>
 
     <div v-if="store.loading" class="loading">Загрузка...</div>
@@ -122,6 +135,7 @@ async function createFromOutOfStock() {
               <span class="item-amount">{{ item.amount }} ед.</span>
               <span v-if="item.sourceRecipeName" class="item-source">из "{{ item.sourceRecipeName }}"</span>
             </div>
+            <button type="button" class="item-delete" title="Удалить из списка" @click="removeItemFromList(item.id)">✕</button>
           </div>
         </div>
       </div>
@@ -141,6 +155,24 @@ h2 { margin-top: 0; }
   display: flex;
   gap: 10px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.toolbar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #555;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.toolbar-toggle input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .btn {
@@ -268,6 +300,19 @@ h2 { margin-top: 0; }
 .item-amount { color: #888; font-size: 0.85rem; }
 .item-source { color: #aaa; font-size: 0.8rem; font-style: italic; }
 
+.item-delete {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 6px 8px;
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+.item-row:hover .item-delete { color: #f44336; }
+.item-delete:active { background: #ffebee; color: #f44336; }
+
 .btn-remove {
   background: none;
   border: none;
@@ -295,6 +340,12 @@ h2 { margin-top: 0; }
   h1 { font-size: 1.4rem; }
 
   .toolbar .btn { flex: 1; padding: 12px; font-size: 14px; }
+  .toolbar-toggle {
+    flex-basis: 100%;
+    font-size: 0.9rem;
+    padding: 8px 4px;
+  }
+  .toolbar-toggle input { width: 20px; height: 20px; }
 
   .lists-layout {
     flex-direction: column;

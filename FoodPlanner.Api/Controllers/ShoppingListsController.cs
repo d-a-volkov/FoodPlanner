@@ -37,11 +37,13 @@ public class ShoppingListsController : ControllerBase
     }
 
     [HttpPost("from-out-of-stock")]
-    public async Task<ActionResult<ShoppingList>> CreateFromOutOfStock([FromQuery] string? name = null)
+    public async Task<ActionResult<ShoppingList>> CreateFromOutOfStock(
+        [FromQuery] string? name = null,
+        [FromQuery] bool includeLowStock = false)
     {
         try
         {
-            var list = await _service.CreateFromOutOfStockAsync(name);
+            var list = await _service.CreateFromOutOfStockAsync(name, includeLowStock);
             return CreatedAtAction(nameof(GetById), new { id = list.Id }, list);
         }
         catch (InvalidOperationException ex)
@@ -64,6 +66,10 @@ public class ShoppingListsController : ControllerBase
         try { return Ok(await _service.TogglePurchasedAsync(listId, itemId)); }
         catch (KeyNotFoundException) { return NotFound(); }
     }
+
+    [HttpDelete("{listId:guid}/items/{itemId:guid}")]
+    public async Task<IActionResult> DeleteItem(Guid listId, Guid itemId)
+        => await _service.DeleteItemAsync(listId, itemId) ? NoContent() : NotFound();
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)

@@ -42,10 +42,11 @@ export const shoppingListsApi = {
   getAll: () => api.get('/shoppinglists'),
   getById: (id) => api.get(`/shoppinglists/${id}`),
   createFromRecipe: (recipeId) => api.post(`/shoppinglists/from-recipe/${recipeId}`),
-  createFromOutOfStock: () => api.post('/shoppinglists/from-out-of-stock'),
+  createFromOutOfStock: (includeLowStock = false) => api.post('/shoppinglists/from-out-of-stock', null, { params: { includeLowStock } }),
   merge: (list1, list2) => api.post(`/shoppinglists/merge?list1=${list1}&list2=${list2}`),
   togglePurchased: (listId, itemId) => api.put(`/shoppinglists/${listId}/items/${itemId}/toggle`),
-  delete: (id) => api.delete(`/shoppinglists/${id}`)
+  delete: (id) => api.delete(`/shoppinglists/${id}`),
+  deleteItem: (listId, itemId) => api.delete(`/shoppinglists/${listId}/items/${itemId}`)
 }
 
 export default api
