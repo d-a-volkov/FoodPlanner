@@ -572,4 +572,52 @@ h1 { margin-top: 0; color: #333; }
   padding: 40px;
   color: #666;
 }
+
+@media (max-width: 767px) {
+  h1 { font-size: 1.4rem; }
+
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .toolbar .search-input { min-width: 100%; order: -1; }
+  .toolbar .btn { flex: 1; }
+
+  .extern-card { padding: 14px; }
+  .extern-hint { display: block; margin-top: 4px; }
+  .extern-controls .search-input { min-width: 100%; }
+  .extern-modes .btn-small { flex: 1; }
+  .extern-grid { grid-template-columns: 1fr; }
+  .extern-card-item { flex-direction: column; }
+  .extern-thumb { width: 100%; height: 160px; }
+
+  .recipes-grid { grid-template-columns: 1fr; gap: 12px; }
+  .recipe-card { padding: 14px; }
+  .recipe-actions { flex-wrap: wrap; }
+  .recipe-actions .btn-small { padding: 8px 12px; font-size: 13px; }
+
+  .modal-overlay {
+    align-items: flex-end;
+  }
+  .modal {
+    width: 100%;
+    max-width: none;
+    max-height: 94vh;
+    border-radius: 16px 16px 0 0;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+  }
+  .form-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .modal-actions .btn {
+    flex: 1;
+    padding: 12px;
+    font-size: 15px;
+  }
+  .add-ingredient-row,
+  .add-step-row { flex-wrap: wrap; }
+  .add-ingredient-row select { min-width: 100%; }
+}
 </style>

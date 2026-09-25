@@ -290,4 +290,33 @@ h2 { margin-top: 0; }
   padding: 40px;
   color: #666;
 }
+
+@media (max-width: 767px) {
+  h1 { font-size: 1.4rem; }
+
+  .toolbar .btn { flex: 1; padding: 12px; font-size: 14px; }
+
+  .lists-layout {
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+  }
+
+  .lists-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .list-card {
+    min-width: 230px;
+    flex-shrink: 0;
+  }
+
+  .list-detail { padding: 16px; }
+  .item-info { flex-wrap: wrap; row-gap: 2px; }
+  .item-source { flex-basis: 100%; }
+  .item-row { padding: 12px; }
+  .item-checkmark { width: 28px; height: 28px; }
+}
 </style>

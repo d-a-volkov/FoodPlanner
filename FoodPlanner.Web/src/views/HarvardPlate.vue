@@ -309,4 +309,22 @@ h3 { color: #555; text-align: center; margin-bottom: 10px; }
 
 .loading, .error { text-align: center; padding: 40px; color: #666; }
 .error { color: #f44336; }
+
+@media (max-width: 767px) {
+  h1 { font-size: 1.4rem; }
+
+  .charts-row {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .chart-card { padding: 14px; }
+  .chart-container { height: 220px; }
+
+  .score-card { width: 100%; padding: 20px; }
+  .score-value { font-size: 2.4rem; }
+
+  .recommendations, .suggestions, .matching-recipes { padding: 14px; }
+  .recipe-match-header { align-items: flex-start; gap: 8px; }
+  .btn { padding: 10px 14px; font-size: 14px; }
+}
 </style>

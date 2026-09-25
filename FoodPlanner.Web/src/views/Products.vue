@@ -422,4 +422,72 @@ h1 { margin-top: 0; color: #333; }
   gap: 10px;
   margin-top: 20px;
 }
+
+@media (max-width: 767px) {
+  h1 { font-size: 1.4rem; }
+
+  .stats {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .stat {
+    flex: 1 1 40%;
+    min-width: 120px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
+  .toolbar { gap: 8px; }
+  .search-input { min-width: 100%; order: -1; }
+  .filter-select { flex: 1; }
+  .toolbar .btn { flex: 1; }
+
+  .products-table,
+  .products-table tbody {
+    display: block;
+    width: 100%;
+    background: transparent;
+    box-shadow: none;
+  }
+  .products-table thead { display: none; }
+  .products-table tr {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+  .products-table td {
+    border-top: none;
+    padding: 0;
+  }
+  .products-table td:nth-child(3),
+  .products-table td:nth-child(4) { display: none; }
+  .status-badge { width: 32px; height: 32px; }
+  .btn-small { padding: 6px 10px; }
+
+  .modal-overlay {
+    align-items: flex-end;
+  }
+  .modal {
+    width: 100%;
+    max-width: none;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+  }
+  .form-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .modal-actions .btn {
+    flex: 1;
+    padding: 12px;
+    font-size: 15px;
+  }
+}
 </style>
