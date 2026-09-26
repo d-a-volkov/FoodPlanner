@@ -161,6 +161,18 @@ public class ShoppingListService : IShoppingListService
 
         item.IsPurchased = !item.IsPurchased;
         await _storage.SaveAllAsync(lists);
+
+        if (item.IsPurchased)
+        {
+            var product = await _productService.GetByIdAsync(item.ProductId);
+            if (product != null &&
+                (product.StockStatus == StockStatus.OutOfStock || product.StockStatus == StockStatus.LowStock))
+            {
+                product.StockStatus = StockStatus.InStock;
+                await _productService.UpdateAsync(product);
+            }
+        }
+
         return item;
     }
 
