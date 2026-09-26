@@ -1,8 +1,10 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useShoppingListsStore } from '../stores/shoppingLists'
+import { useProductsStore } from '../stores/products'
 
 const store = useShoppingListsStore()
+const productsStore = useProductsStore()
 const showDetail = ref(null)
 
 const sortedItems = computed(() => {
@@ -15,6 +17,7 @@ const sortedItems = computed(() => {
 
 onMounted(() => {
   store.fetchLists()
+  initZones()
 })
 
 function openDetail(list) {
@@ -47,12 +50,55 @@ async function removeList(id) {
 
 const creatingFromStock = ref(false)
 const includeLow = ref(localStorage.getItem('includeLowStock') === '1')
+const selectedZones = ref(new Set())
+
+function persistSelectedZones() {
+  localStorage.setItem('selectedZones', JSON.stringify([...selectedZones.value]))
+}
+
+function initZones() {
+  const zoneKeys = Object.keys(productsStore.zones)
+  const stored = localStorage.getItem('selectedZones')
+  if (stored) {
+    try {
+      selectedZones.value = new Set(JSON.parse(stored).filter(k => zoneKeys.includes(k)))
+      return
+    } catch (e) {
+      // fall through to default
+    }
+  }
+  selectedZones.value = new Set(zoneKeys)
+}
+
+function toggleZone(key) {
+  const has = selectedZones.value.has(key)
+  if (has) selectedZones.value.delete(key)
+  else selectedZones.value.add(key)
+  persistSelectedZones()
+}
+
+function selectAllZones() {
+  selectedZones.value = new Set(Object.keys(productsStore.zones))
+  persistSelectedZones()
+}
+
+function clearZones() {
+  selectedZones.value = new Set()
+  persistSelectedZones()
+}
 
 async function createFromOutOfStock() {
+  if (selectedZones.value.size === 0) {
+    alert('Выберите хотя бы одну зону для формирования списка')
+    return
+  }
   creatingFromStock.value = true
   try {
     localStorage.setItem('includeLowStock', includeLow.value ? '1' : '0')
-    const list = await store.createFromOutOfStock(includeLow.value)
+    persistSelectedZones()
+    const allKeys = Object.keys(productsStore.zones)
+    const zones = selectedZones.value.size === allKeys.length ? [] : [...selectedZones.value]
+    const list = await store.createFromOutOfStock(includeLow.value, zones)
     showDetail.value = list
   } catch (e) {
     alert(e.response?.data || e.message)
@@ -108,6 +154,27 @@ function exportToTxt(list) {
         <input v-model="includeLow" type="checkbox" />
         Включать продукты со статусом «Мало»
       </label>
+    </div>
+
+    <div class="zones-card">
+      <div class="zones-top">
+        <span class="zones-title">Зоны для включения в список</span>
+        <div class="zones-actions">
+          <button class="btn btn-small" @click="selectAllZones">Все</button>
+          <button class="btn btn-small" @click="clearZones">Ничего</button>
+        </div>
+      </div>
+      <div class="zones-grid">
+        <label
+          v-for="(name, key) in productsStore.zones"
+          :key="key"
+          class="zone-chip"
+          :class="{ active: selectedZones.has(key) }"
+        >
+          <input type="checkbox" :checked="selectedZones.has(key)" @change="toggleZone(key)" />
+          <span>{{ name }}</span>
+        </label>
+      </div>
     </div>
 
     <div v-if="store.loading" class="loading">Загрузка...</div>
@@ -212,6 +279,48 @@ h2 { margin-top: 0; }
   height: 16px;
   cursor: pointer;
 }
+
+.zones-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  margin-bottom: 20px;
+}
+.zones-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.zones-title { font-weight: 600; font-size: 0.9rem; color: #444; }
+.zones-actions { display: flex; gap: 6px; }
+.zones-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.zone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  user-select: none;
+  color: #555;
+}
+.zone-chip.active {
+  background: #e3f2fd;
+  border-color: #1976d2;
+  color: #1976d2;
+  font-weight: 500;
+}
+.zone-chip input { margin: 0; cursor: pointer; }
 
 .btn {
   padding: 8px 16px;
@@ -392,6 +501,20 @@ h2 { margin-top: 0; }
     padding: 8px 4px;
   }
   .toolbar-toggle input { width: 20px; height: 20px; }
+
+  .zones-card { padding: 12px; margin-bottom: 16px; }
+  .zones-title { font-size: 0.95rem; }
+  .zones-grid { gap: 8px; }
+  .zone-chip {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    padding: 12px 10px;
+    font-size: 0.9rem;
+  }
+  .zone-chip input {
+    width: 20px;
+    height: 20px;
+  }
 
   .lists-layout {
     flex-direction: column;

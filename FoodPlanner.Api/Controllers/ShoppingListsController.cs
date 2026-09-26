@@ -39,11 +39,23 @@ public class ShoppingListsController : ControllerBase
     [HttpPost("from-out-of-stock")]
     public async Task<ActionResult<ShoppingList>> CreateFromOutOfStock(
         [FromQuery] string? name = null,
-        [FromQuery] bool includeLowStock = false)
+        [FromQuery] bool includeLowStock = false,
+        [FromQuery] string? zones = null)
     {
         try
         {
-            var list = await _service.CreateFromOutOfStockAsync(name, includeLowStock);
+            List<int>? zoneIds = null;
+            if (!string.IsNullOrWhiteSpace(zones))
+            {
+                zoneIds = zones
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(s => int.TryParse(s, out var z) ? (int?)z : null)
+                    .Where(z => z.HasValue)
+                    .Select(z => z!.Value)
+                    .ToList();
+            }
+
+            var list = await _service.CreateFromOutOfStockAsync(name, includeLowStock, zoneIds);
             return CreatedAtAction(nameof(GetById), new { id = list.Id }, list);
         }
         catch (InvalidOperationException ex)

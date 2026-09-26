@@ -226,7 +226,7 @@ onUnmounted(() => {
 
   .content {
     padding: 14px;
-    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+    padding-bottom: calc(92px + env(safe-area-inset-bottom));
   }
 
   .bottom-nav {
@@ -276,6 +276,10 @@ onUnmounted(() => {
 
   .bottom-label {
     white-space: nowrap;
+  }
+
+  .offline-banner {
+    bottom: calc(96px + env(safe-area-inset-bottom));
   }
 }
 </style>

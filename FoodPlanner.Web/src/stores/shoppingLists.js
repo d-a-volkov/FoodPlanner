@@ -40,8 +40,8 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
     return data
   }
 
-  async function createFromOutOfStock(includeLowStock = false) {
-    const { data } = await shoppingListsApi.createFromOutOfStock(includeLowStock)
+  async function createFromOutOfStock(includeLowStock = false, zones = []) {
+    const { data } = await shoppingListsApi.createFromOutOfStock(includeLowStock, zones)
     lists.value.push(data)
     return data
   }

@@ -66,20 +66,24 @@ public class ShoppingListService : IShoppingListService
         return await _storage.CreateAsync(shoppingList);
     }
 
-    public async Task<ShoppingList> CreateFromOutOfStockAsync(string? name = null, bool includeLowStock = false)
+    public async Task<ShoppingList> CreateFromOutOfStockAsync(string? name = null, bool includeLowStock = false, List<int>? zones = null)
     {
         var products = await _productService.GetAllAsync();
+        var zoneFilter = zones is { Count: > 0 };
+
         var notable = products
-            .Where(p => p.StockStatus == StockStatus.OutOfStock ||
-                        (includeLowStock && p.StockStatus == StockStatus.LowStock))
+            .Where(p => (p.StockStatus == StockStatus.OutOfStock ||
+                        (includeLowStock && p.StockStatus == StockStatus.LowStock)) &&
+                        (!zoneFilter || zones!.Contains((int)p.StorageZone)))
             .OrderBy(p => p.Name)
             .ToList();
 
+        var zoneSuffix = zoneFilter ? " в выбранных зонах" : "";
         if (notable.Count == 0)
             throw new InvalidOperationException(
                 includeLowStock
-                    ? "Отсутствующих и «мало» продуктов нет — список создавать не нужно."
-                    : "Отсутствующих продуктов нет — список создавать не нужно.");
+                    ? $"Отсутствующих и «мало» продуктов{zoneSuffix} нет — список создавать не нужно."
+                    : $"Отсутствующих продуктов{zoneSuffix} нет — список создавать не нужно.");
 
         var items = notable.Select(product => new ShoppingItem
         {

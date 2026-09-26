@@ -510,7 +510,7 @@ h1 { margin-top: 0; color: #333; }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 300;
 }
 .modal {
   background: #fff;
