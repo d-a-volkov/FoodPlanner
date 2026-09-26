@@ -59,6 +59,33 @@ async function removeItemFromList(itemId) {
   if (!confirm(`Удалить «${item.productName}» из списка?`)) return
   await store.removeItem(showDetail.value.id, itemId)
 }
+
+function exportToTxt(list) {
+  const lines = []
+  lines.push(`Список покупок: ${list.name}`)
+  lines.push(`Создан: ${new Date(list.createdDate).toLocaleDateString('ru-RU')}`)
+  lines.push('')
+  ;(list.items || []).forEach((item, i) => {
+    const mark = item.isPurchased ? '✓' : '☐'
+    lines.push(
+      `${i + 1}. ${mark} ${item.productName} — ${item.amount} ед.` +
+      (item.sourceRecipeName ? ` (из "${item.sourceRecipeName}")` : '')
+    )
+  })
+  lines.push('')
+  lines.push(`Куплено: ${purchasedCount(list)} из ${totalCount(list)}`)
+
+  const content = lines.join('\r\n')
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = (list.name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'spisok-pokupok') + '.txt'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
@@ -105,7 +132,10 @@ async function removeItemFromList(itemId) {
       </div>
 
       <div v-if="showDetail" class="list-detail">
-        <h2>{{ showDetail.name }}</h2>
+        <div class="detail-top">
+          <h2>{{ showDetail.name }}</h2>
+          <button class="btn btn-small" @click="exportToTxt(showDetail)">⬇ TXT</button>
+        </div>
         <div class="detail-date">Создан: {{ new Date(showDetail.createdDate).toLocaleDateString('ru-RU') }}</div>
 
         <div class="detail-progress">
@@ -248,6 +278,14 @@ h2 { margin-top: 0; }
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
+.detail-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.detail-top h2 { margin: 0; overflow-wrap: anywhere; }
+
 .detail-date { font-size: 0.85rem; color: #999; margin-bottom: 15px; }
 
 .detail-progress {
@@ -365,6 +403,8 @@ h2 { margin-top: 0; }
   }
 
   .list-detail { padding: 16px; }
+  .detail-top { align-items: flex-start; }
+  .detail-top .btn { padding: 8px 12px; font-size: 13px; flex-shrink: 0; }
   .item-info { flex-wrap: wrap; row-gap: 2px; }
   .item-source { flex-basis: 100%; }
   .item-row { padding: 12px; }
