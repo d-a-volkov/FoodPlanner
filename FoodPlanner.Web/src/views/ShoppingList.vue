@@ -5,6 +5,14 @@ import { useShoppingListsStore } from '../stores/shoppingLists'
 const store = useShoppingListsStore()
 const showDetail = ref(null)
 
+const sortedItems = computed(() => {
+  const items = showDetail.value?.items || []
+  return [...items].sort((a, b) => {
+    if (a.isPurchased !== b.isPurchased) return a.isPurchased ? 1 : -1
+    return a.productName.localeCompare(b.productName, 'ru', { sensitivity: 'base' })
+  })
+})
+
 onMounted(() => {
   store.fetchLists()
 })
@@ -147,7 +155,7 @@ function exportToTxt(list) {
 
         <div class="items-list">
           <div
-            v-for="item in showDetail.items"
+            v-for="item in sortedItems"
             :key="item.id"
             class="item-row"
             :class="{ purchased: item.isPurchased }"

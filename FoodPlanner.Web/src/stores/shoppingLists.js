@@ -52,6 +52,11 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
       const item = currentList.value.items.find(i => i.id === itemId)
       if (item) item.isPurchased = data.isPurchased
     }
+    const list = lists.value.find(l => l.id === listId)
+    if (list) {
+      const item = list.items.find(i => i.id === itemId)
+      if (item) item.isPurchased = data.isPurchased
+    }
     return data
   }
 
