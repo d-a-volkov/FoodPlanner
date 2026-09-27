@@ -39,11 +39,11 @@ public static class DataSeeder
     {
         Console.WriteLine("\n=== Сводка ===");
 
-        var byZone = products.GroupBy(p => p.StorageZone).OrderBy(g => g.Key);
-        foreach (var zone in byZone)
+        var byCategory = products.GroupBy(p => p.Category).OrderBy(g => g.Key);
+        foreach (var category in byCategory)
         {
-            Console.WriteLine($"\n{GetZoneName(zone.Key)}:");
-            foreach (var p in zone)
+            Console.WriteLine($"\n{category.Key.GetDisplayName()}:");
+            foreach (var p in category)
             {
                 var status = p.StockStatus switch
                 {
@@ -52,7 +52,7 @@ public static class DataSeeder
                     StockStatus.LowStock => "[0 ]",
                     _ => "[? ]"
                 };
-                Console.WriteLine($"  {status} {p.Name} ({GetCategoryName(p.Category)})");
+                Console.WriteLine($"  {status} {p.Name}");
             }
         }
 
@@ -64,37 +64,8 @@ public static class DataSeeder
         Console.WriteLine($"  В наличии: {inStock}");
         Console.WriteLine($"  Нет в наличии: {outOfStock}");
         Console.WriteLine($"  Мало/пусто: {lowStock}");
+
+        var other = products.Count(p => p.Category == ProductCategory.Other);
+        Console.WriteLine($"  Прочее (не распределено): {other}");
     }
-
-    private static string GetZoneName(StorageZone zone) => zone switch
-    {
-        StorageZone.Fridge => "Холодильник",
-        StorageZone.VegetableAndFruitShelf => "Овощи и фрукты",
-        StorageZone.DairyShelf => "Молочные продукты",
-        StorageZone.CannedGoodsShelf => "Консервы и закатки",
-        StorageZone.FridgeDoor => "Дверца",
-        StorageZone.Freezer => "Морозилка",
-        StorageZone.BakingShelf => "Выпечка",
-        StorageZone.GrainsAndPastaShelf => "Крупы и макароны",
-        StorageZone.SpicesAndSeasoningsShelf => "Специи и приправы",
-        StorageZone.CoffeeAndTea => "Кофе и чай",
-        StorageZone.HouseholdSupplies => "Хоз. товары",
-        _ => zone.ToString()
-    };
-
-    private static string GetCategoryName(ProductCategory cat) => cat switch
-    {
-        ProductCategory.Vegetables => "Овощи",
-        ProductCategory.Fruits => "Фрукты",
-        ProductCategory.WholeGrains => "Цельнозерновые",
-        ProductCategory.Proteins => "Белок",
-        ProductCategory.Dairy => "Молочные",
-        ProductCategory.HealthyFats => "Полезные жиры",
-        ProductCategory.Legumes => "Бобовые",
-        ProductCategory.NutsAndSeeds => "Орехи",
-        ProductCategory.Spices => "Специи",
-        ProductCategory.Beverages => "Напитки",
-        ProductCategory.Other => "Другое",
-        _ => cat.ToString()
-    };
 }

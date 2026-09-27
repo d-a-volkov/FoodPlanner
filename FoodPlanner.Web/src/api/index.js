@@ -8,7 +8,7 @@ const api = axios.create({
 export const productsApi = {
   getAll: () => api.get('/products'),
   getById: (id) => api.get(`/products/${id}`),
-  getByZone: (zone) => api.get(`/products/zone/${zone}`),
+  getAllCategories: () => api.get('/products/categories'),
   getByCategory: (category) => api.get(`/products/category/${category}`),
   getByStatus: (status) => api.get(`/products/status/${status}`),
   search: (q) => api.get('/products/search', { params: { q } }),
@@ -42,9 +42,9 @@ export const shoppingListsApi = {
   getAll: () => api.get('/shoppinglists'),
   getById: (id) => api.get(`/shoppinglists/${id}`),
   createFromRecipe: (recipeId) => api.post(`/shoppinglists/from-recipe/${recipeId}`),
-  createFromOutOfStock: (includeLowStock = false, zones = []) => {
+  createFromOutOfStock: (includeLowStock = false, categories = []) => {
     const params = { includeLowStock }
-    if (zones.length) params.zones = zones.join(',')
+    if (categories.length) params.categories = categories.join(',')
     return api.post('/shoppinglists/from-out-of-stock', null, { params })
   },
   merge: (list1, list2) => api.post(`/shoppinglists/merge?list1=${list1}&list2=${list2}`),

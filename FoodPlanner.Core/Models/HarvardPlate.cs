@@ -4,7 +4,7 @@ namespace FoodPlanner.Core.Models;
 
 public class HarvardPlateRatio
 {
-    public ProductCategory Category { get; set; }
+    public List<ProductCategory> Categories { get; set; } = [];
     public string DisplayName { get; set; } = string.Empty;
     public double RecommendedPercentage { get; set; }
     public double CurrentPercentage { get; set; }

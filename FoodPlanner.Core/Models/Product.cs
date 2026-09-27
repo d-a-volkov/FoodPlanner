@@ -6,7 +6,6 @@ public class Product
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
-    public StorageZone StorageZone { get; set; }
     public ProductCategory Category { get; set; }
     public StockStatus StockStatus { get; set; }
     public bool HasReserve { get; set; }

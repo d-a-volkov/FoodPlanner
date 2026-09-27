@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useShoppingListsStore } from '../stores/shoppingLists'
 import { useProductsStore } from '../stores/products'
 
@@ -15,10 +15,27 @@ const sortedItems = computed(() => {
   })
 })
 
+let syncTimer = null
+
 onMounted(() => {
   store.fetchLists()
-  initZones()
+  productsStore.fetchCategories()
+  initCategories()
+  syncTimer = setInterval(syncLists, 10000)
 })
+
+onUnmounted(() => {
+  clearInterval(syncTimer)
+})
+
+async function syncLists() {
+  await store.silentFetchLists()
+  if (showDetail.value) {
+    const fresh = store.lists.find(l => l.id === showDetail.value.id)
+    if (fresh) showDetail.value = fresh
+    else showDetail.value = null
+  }
+}
 
 function openDetail(list) {
   showDetail.value = list
@@ -50,55 +67,61 @@ async function removeList(id) {
 
 const creatingFromStock = ref(false)
 const includeLow = ref(localStorage.getItem('includeLowStock') === '1')
-const selectedZones = ref(new Set())
+const selectedCategories = ref(new Set())
+const categoriesCollapsed = ref(localStorage.getItem('collapsedCategoriesList') === '1')
 
-function persistSelectedZones() {
-  localStorage.setItem('selectedZones', JSON.stringify([...selectedZones.value]))
+function persistSelectedCategories() {
+  localStorage.setItem('selectedCategories', JSON.stringify([...selectedCategories.value]))
 }
 
-function initZones() {
-  const zoneKeys = Object.keys(productsStore.zones)
-  const stored = localStorage.getItem('selectedZones')
+function initCategories() {
+  const categoryKeys = Object.keys(productsStore.CATEGORIES)
+  const stored = localStorage.getItem('selectedCategories')
   if (stored) {
     try {
-      selectedZones.value = new Set(JSON.parse(stored).filter(k => zoneKeys.includes(k)))
+      selectedCategories.value = new Set(JSON.parse(stored).filter(k => categoryKeys.includes(k)))
       return
     } catch (e) {
       // fall through to default
     }
   }
-  selectedZones.value = new Set(zoneKeys)
+  selectedCategories.value = new Set(categoryKeys)
 }
 
-function toggleZone(key) {
-  const has = selectedZones.value.has(key)
-  if (has) selectedZones.value.delete(key)
-  else selectedZones.value.add(key)
-  persistSelectedZones()
+function toggleCategory(key) {
+  const has = selectedCategories.value.has(key)
+  if (has) selectedCategories.value.delete(key)
+  else selectedCategories.value.add(key)
+  persistSelectedCategories()
 }
 
-function selectAllZones() {
-  selectedZones.value = new Set(Object.keys(productsStore.zones))
-  persistSelectedZones()
+function selectAllCategories() {
+  selectedCategories.value = new Set(Object.keys(productsStore.CATEGORIES))
+  persistSelectedCategories()
 }
 
-function clearZones() {
-  selectedZones.value = new Set()
-  persistSelectedZones()
+function clearCategories() {
+  selectedCategories.value = new Set()
+  persistSelectedCategories()
+}
+
+function toggleCategoriesCard() {
+  categoriesCollapsed.value = !categoriesCollapsed.value
+  localStorage.setItem('collapsedCategoriesList', categoriesCollapsed.value ? '1' : '0')
 }
 
 async function createFromOutOfStock() {
-  if (selectedZones.value.size === 0) {
-    alert('Выберите хотя бы одну зону для формирования списка')
+  if (selectedCategories.value.size === 0) {
+    alert('Выберите хотя бы одну категорию для формирования списка')
     return
   }
   creatingFromStock.value = true
   try {
     localStorage.setItem('includeLowStock', includeLow.value ? '1' : '0')
-    persistSelectedZones()
-    const allKeys = Object.keys(productsStore.zones)
-    const zones = selectedZones.value.size === allKeys.length ? [] : [...selectedZones.value]
-    const list = await store.createFromOutOfStock(includeLow.value, zones)
+    persistSelectedCategories()
+    const allKeys = Object.keys(productsStore.CATEGORIES)
+    const categories = selectedCategories.value.size === allKeys.length ? [] : [...selectedCategories.value]
+    const list = await store.createFromOutOfStock(includeLow.value, categories)
     showDetail.value = list
   } catch (e) {
     alert(e.response?.data || e.message)
@@ -156,22 +179,28 @@ function exportToTxt(list) {
       </label>
     </div>
 
-    <div class="zones-card">
-      <div class="zones-top">
-        <span class="zones-title">Зоны для включения в список</span>
-        <div class="zones-actions">
-          <button class="btn btn-small" @click="selectAllZones">Все</button>
-          <button class="btn btn-small" @click="clearZones">Ничего</button>
-        </div>
-      </div>
-      <div class="zones-grid">
+    <div class="categories-card">
+      <button type="button" class="categories-top" @click="toggleCategoriesCard">
+        <span class="categories-caret">{{ categoriesCollapsed ? '▸' : '▾' }}</span>
+        <span class="categories-title">
+          Категории для включения в список
+          <span v-if="categoriesCollapsed" class="categories-summary">
+            ({{ selectedCategories.size }})
+          </span>
+        </span>
+        <span class="categories-actions" @click.stop>
+          <button class="btn btn-small" @click="selectAllCategories">Все</button>
+          <button class="btn btn-small" @click="clearCategories">Ничего</button>
+        </span>
+      </button>
+      <div v-if="!categoriesCollapsed" class="categories-grid">
         <label
-          v-for="(name, key) in productsStore.zones"
+          v-for="(name, key) in productsStore.CATEGORIES"
           :key="key"
-          class="zone-chip"
-          :class="{ active: selectedZones.has(key) }"
+          class="category-chip"
+          :class="{ active: selectedCategories.has(key) }"
         >
-          <input type="checkbox" :checked="selectedZones.has(key)" @change="toggleZone(key)" />
+          <input type="checkbox" :checked="selectedCategories.has(key)" @change="toggleCategory(key)" />
           <span>{{ name }}</span>
         </label>
       </div>
@@ -280,28 +309,42 @@ h2 { margin-top: 0; }
   cursor: pointer;
 }
 
-.zones-card {
+.categories-card {
   background: #fff;
   border-radius: 12px;
   padding: 14px 16px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   margin-bottom: 20px;
 }
-.zones-top {
+.categories-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
-.zones-title { font-weight: 600; font-size: 0.9rem; color: #444; }
-.zones-actions { display: flex; gap: 6px; }
-.zones-grid {
+.categories-caret {
+  font-size: 0.75rem;
+  color: #999;
+  flex-shrink: 0;
+}
+.categories-title { font-weight: 600; font-size: 0.9rem; color: #444; }
+.categories-summary { font-weight: 400; color: #888; }
+.categories-actions { display: flex; gap: 6px; }
+.categories-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.zone-chip {
+.category-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -314,13 +357,13 @@ h2 { margin-top: 0; }
   user-select: none;
   color: #555;
 }
-.zone-chip.active {
+.category-chip.active {
   background: #e3f2fd;
   border-color: #1976d2;
   color: #1976d2;
   font-weight: 500;
 }
-.zone-chip input { margin: 0; cursor: pointer; }
+.category-chip input { margin: 0; cursor: pointer; }
 
 .btn {
   padding: 8px 16px;
@@ -335,6 +378,7 @@ h2 { margin-top: 0; }
 .btn-primary { background: #1976d2; color: #fff; border-color: #1976d2; }
 .btn-primary:hover { background: #1565c0; }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-small { padding: 4px 10px; font-size: 12px; }
 
 .lists-layout {
   display: flex;
@@ -502,16 +546,16 @@ h2 { margin-top: 0; }
   }
   .toolbar-toggle input { width: 20px; height: 20px; }
 
-  .zones-card { padding: 12px; margin-bottom: 16px; }
-  .zones-title { font-size: 0.95rem; }
-  .zones-grid { gap: 8px; }
-  .zone-chip {
+  .categories-card { padding: 12px; margin-bottom: 16px; }
+  .categories-title { font-size: 0.95rem; }
+  .categories-grid { gap: 8px; }
+  .category-chip {
     flex: 1 1 calc(50% - 4px);
     min-width: 0;
     padding: 12px 10px;
     font-size: 0.9rem;
   }
-  .zone-chip input {
+  .category-chip input {
     width: 20px;
     height: 20px;
   }

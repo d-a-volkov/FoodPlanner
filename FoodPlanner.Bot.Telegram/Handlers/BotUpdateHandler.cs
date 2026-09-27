@@ -121,15 +121,15 @@ public class BotUpdateHandler
 
         var products = await _api.GetProductsAsync();
         var grouped = products
-            .GroupBy(p => p.StorageZone)
+            .GroupBy(p => p.Category)
             .OrderBy(g => g.Key);
 
         var lines = new List<string>();
-        foreach (var zone in grouped)
+        foreach (var category in grouped)
         {
-            var zoneName = GetZoneName(zone.Key);
-            lines.Add($"\n<b>{zoneName}:</b>");
-            foreach (var p in zone)
+            var categoryName = category.Key.GetDisplayName();
+            lines.Add($"\n<b>{categoryName}:</b>");
+            foreach (var p in category)
             {
                 var status = p.StockStatus switch
                 {
@@ -158,7 +158,7 @@ public class BotUpdateHandler
         var products = await _api.GetProductsAsync();
         var outOfStock = products
             .Where(p => p.StockStatus == StockStatus.OutOfStock)
-            .OrderBy(p => p.StorageZone)
+            .OrderBy(p => p.Category)
             .ThenBy(p => p.Name)
             .ToList();
 
@@ -347,22 +347,6 @@ public class BotUpdateHandler
 
         await _bot.SendMessage(chatId, message, ParseMode.Html, cancellationToken: ct);
     }
-
-    private static string GetZoneName(StorageZone zone) => zone switch
-    {
-        StorageZone.Fridge => "🧊 Холодильник",
-        StorageZone.VegetableAndFruitShelf => "🥕 Овощи и фрукты",
-        StorageZone.DairyShelf => "🥛 Молочные продукты",
-        StorageZone.CannedGoodsShelf => "🥫 Консервы",
-        StorageZone.FridgeDoor => "🚪 Дверца",
-        StorageZone.Freezer => "❄️ Морозилка",
-        StorageZone.BakingShelf => "🧁 Выпечка",
-        StorageZone.GrainsAndPastaShelf => "🌾 Крупы и макароны",
-        StorageZone.SpicesAndSeasoningsShelf => "🧂 Специи",
-        StorageZone.CoffeeAndTea => "☕ Кофе и чай",
-        StorageZone.HouseholdSupplies => "🧹 Хоз. товары",
-        _ => zone.ToString()
-    };
 
     private static string IngredientLabel(RecipeIngredient ingredient)
         => ingredient.ProductName

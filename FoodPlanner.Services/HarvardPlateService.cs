@@ -11,10 +11,10 @@ public class HarvardPlateService : IHarvardPlateService
 
     private static readonly List<HarvardPlateRatio> RecommendedRatios =
     [
-        new() { Category = ProductCategory.Vegetables, DisplayName = "Овощи", RecommendedPercentage = 35 },
-        new() { Category = ProductCategory.Fruits, DisplayName = "Фрукты", RecommendedPercentage = 15 },
-        new() { Category = ProductCategory.WholeGrains, DisplayName = "Цельнозерновые", RecommendedPercentage = 25 },
-        new() { Category = ProductCategory.Proteins, DisplayName = "Белок", RecommendedPercentage = 25 },
+        new() { Categories = [ProductCategory.Vegetables, ProductCategory.Greens], DisplayName = "Овощи", RecommendedPercentage = 35 },
+        new() { Categories = [ProductCategory.Fruits], DisplayName = "Фрукты", RecommendedPercentage = 15 },
+        new() { Categories = [ProductCategory.Grains], DisplayName = "Цельнозерновые", RecommendedPercentage = 25 },
+        new() { Categories = [ProductCategory.Meat, ProductCategory.Poultry, ProductCategory.Fish, ProductCategory.Seafood, ProductCategory.Eggs, ProductCategory.Legumes, ProductCategory.NutsAndSeeds], DisplayName = "Белок", RecommendedPercentage = 25 },
     ];
 
     private static readonly List<string> RecommendedProducts = new()
@@ -50,12 +50,12 @@ public class HarvardPlateService : IHarvardPlateService
 
         var ratios = RecommendedRatios.Select(r =>
         {
-            var currentCount = categoryGroups.GetValueOrDefault(r.Category, 0);
+            var currentCount = r.Categories.Sum(c => categoryGroups.GetValueOrDefault(c, 0));
             var currentPct = (double)currentCount / totalCount * 100;
 
             return new HarvardPlateRatio
             {
-                Category = r.Category,
+                Categories = r.Categories,
                 DisplayName = r.DisplayName,
                 RecommendedPercentage = r.RecommendedPercentage,
                 CurrentPercentage = Math.Round(currentPct, 1),
@@ -115,8 +115,15 @@ public class HarvardPlateService : IHarvardPlateService
             }
         }
 
+        var proteinCategories = new HashSet<ProductCategory>
+        {
+            ProductCategory.Meat, ProductCategory.Poultry, ProductCategory.Fish,
+            ProductCategory.Seafood, ProductCategory.Eggs, ProductCategory.Legumes,
+            ProductCategory.NutsAndSeeds
+        };
+
         var activeProducts = products.Where(p => p.StockStatus != StockStatus.NotUsed).ToList();
-        var proteinProducts = activeProducts.Where(p => p.Category == ProductCategory.Proteins).ToList();
+        var proteinProducts = activeProducts.Where(p => proteinCategories.Contains(p.Category)).ToList();
         bool hasFish = proteinProducts.Any(p => p.Name.Contains("рыб", StringComparison.OrdinalIgnoreCase));
         bool hasPoultry = proteinProducts.Any(p =>
             p.Name.Contains("куриц", StringComparison.OrdinalIgnoreCase) ||
@@ -127,7 +134,9 @@ public class HarvardPlateService : IHarvardPlateService
         if (!hasPoultry)
             recommendations.Add("Рекомендуется добавить птицу (курицу/индейку) как источник белка.");
 
-        bool hasHealthyFats = activeProducts.Any(p => p.Category == ProductCategory.HealthyFats);
+        bool hasHealthyFats = activeProducts.Any(p =>
+            p.Category == ProductCategory.OilsAndFats ||
+            p.Category == ProductCategory.NutsAndSeeds);
         if (!hasHealthyFats)
             recommendations.Add("Добавьте полезные жиры: оливковое масло, орехи, авокадо.");
 
@@ -156,7 +165,7 @@ public class HarvardPlateService : IHarvardPlateService
             if (ratio.CurrentPercentage < ratio.RecommendedPercentage - 5)
             {
                 var candidates = activeProducts
-                    .Where(p => p.Category == ratio.Category &&
+                    .Where(p => ratio.Categories.Contains(p.Category) &&
                                 !inStock.Any(ip => ip.Id == p.Id))
                     .Take(3);
                 missing.AddRange(candidates);

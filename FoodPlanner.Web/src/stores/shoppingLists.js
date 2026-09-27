@@ -8,17 +8,21 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
   const loading = ref(false)
   const error = ref(null)
 
-  async function fetchLists() {
-    loading.value = true
+  async function fetchLists(silent = false) {
+    if (!silent) loading.value = true
     error.value = null
     try {
       const { data } = await shoppingListsApi.getAll()
       lists.value = data
     } catch (e) {
-      error.value = e.message
+      if (!silent) error.value = e.message
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
     }
+  }
+
+  async function silentFetchLists() {
+    await fetchLists(true)
   }
 
   async function fetchList(id) {
@@ -40,8 +44,8 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
     return data
   }
 
-  async function createFromOutOfStock(includeLowStock = false, zones = []) {
-    const { data } = await shoppingListsApi.createFromOutOfStock(includeLowStock, zones)
+  async function createFromOutOfStock(includeLowStock = false, categories = []) {
+    const { data } = await shoppingListsApi.createFromOutOfStock(includeLowStock, categories)
     lists.value.push(data)
     return data
   }
@@ -77,6 +81,6 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
 
   return {
     lists, currentList, loading, error,
-    fetchLists, fetchList, createFromRecipe, createFromOutOfStock, togglePurchased, removeItem, deleteList
+    fetchLists, silentFetchLists, fetchList, createFromRecipe, createFromOutOfStock, togglePurchased, removeItem, deleteList
   }
 })

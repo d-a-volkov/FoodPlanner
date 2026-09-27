@@ -47,6 +47,21 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
+    var productsPath = Path.Combine(dataPath, "products.json");
+    if (File.Exists(productsPath))
+    {
+        var raw = await File.ReadAllTextAsync(productsPath);
+        if (raw.Contains("storageZone", StringComparison.OrdinalIgnoreCase))
+        {
+            await productService.RecategorizeAllAsync();
+            Console.WriteLine("Миграция: продукты перераспределены по новым категориям.");
+        }
+    }
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

@@ -2,33 +2,27 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { productsApi } from '../api'
 
-function defaultZones() {
-  return {
-    0: 'Холодильник',
-    1: 'Овощи и фрукты',
-    2: 'Молочные продукты',
-    3: 'Консервы и закатки',
-    4: 'Дверца',
-    5: 'Морозилка',
-    6: 'Выпечка',
-    7: 'Крупы и макароны',
-    8: 'Специи и приправы',
-    9: 'Кофе и чай',
-    10: 'Хоз. товары'
-  }
-}
-
-function loadZones() {
-  try {
-    const stored = localStorage.getItem('storageZones')
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) return parsed
-    }
-  } catch (e) {
-    // ignore corrupted storage
-  }
-  return defaultZones()
+const DEFAULT_CATEGORIES = {
+  0: 'Овощи',
+  1: 'Фрукты и ягоды',
+  2: 'Зелень и салаты',
+  3: 'Мясо',
+  4: 'Птица',
+  5: 'Рыба',
+  6: 'Морепродукты',
+  7: 'Яйца',
+  8: 'Молочные продукты',
+  9: 'Крупы и макароны',
+  10: 'Хлеб и выпечка',
+  11: 'Бобовые',
+  12: 'Орехи и семена',
+  13: 'Масла и жиры',
+  14: 'Специи и приправы',
+  15: 'Консервы и заготовки',
+  16: 'Замороженные продукты',
+  17: 'Сладости',
+  18: 'Напитки',
+  19: 'Прочее'
 }
 
 export const useProductsStore = defineStore('products', () => {
@@ -36,40 +30,7 @@ export const useProductsStore = defineStore('products', () => {
   const loading = ref(false)
   const error = ref(null)
 
-  const zones = ref(loadZones())
-
-  function persistZones() {
-    localStorage.setItem('storageZones', JSON.stringify(zones.value))
-  }
-
-  function addZone(name) {
-    const keys = Object.keys(zones.value).map(Number)
-    const nextId = keys.length ? Math.max(...keys) + 1 : 0
-    zones.value[String(nextId)] = name
-    persistZones()
-    return nextId
-  }
-
-  function fallbackZone(excludeId) {
-    const keys = Object.keys(zones.value).map(Number).sort((a, b) => a - b)
-    return keys.find(k => k !== excludeId)
-  }
-
-  async function removeZone(zoneId) {
-    const id = Number(zoneId)
-    if (!Object.prototype.hasOwnProperty.call(zones.value, String(id))) return false
-    if (Object.keys(zones.value).length <= 1) return false
-    const productsInZone = products.value.filter(p => p.storageZone === id)
-    if (productsInZone.length) {
-      const targetId = fallbackZone(id)
-      for (const p of productsInZone) {
-        await updateProduct({ ...p, storageZone: targetId })
-      }
-    }
-    delete zones.value[String(id)]
-    persistZones()
-    return true
-  }
+  const CATEGORIES = ref({ ...DEFAULT_CATEGORIES })
 
   const STOCK_STATUS = {
     0: { label: 'В наличии', color: 'green', icon: '✓' },
@@ -78,18 +39,17 @@ export const useProductsStore = defineStore('products', () => {
     3: { label: 'Не используется', color: 'gray', icon: '⊘' }
   }
 
-  const CATEGORIES = {
-    0: 'Овощи',
-    1: 'Фрукты',
-    2: 'Цельнозерновые',
-    3: 'Белок',
-    4: 'Молочные',
-    5: 'Полезные жиры',
-    6: 'Бобовые',
-    7: 'Орехи',
-    8: 'Специи',
-    9: 'Напитки',
-    10: 'Другое'
+  async function fetchCategories() {
+    try {
+      const { data } = await productsApi.getAllCategories()
+      if (Array.isArray(data) && data.length) {
+        const map = {}
+        for (const c of data) map[c.id] = c.name
+        CATEGORIES.value = { ...map }
+      }
+    } catch (e) {
+      // keep local fallback
+    }
   }
 
   async function fetchProducts() {
@@ -128,33 +88,17 @@ export const useProductsStore = defineStore('products', () => {
     return updateProduct({ ...product, stockStatus: newStatus })
   }
 
-  function getZoneName(zone) {
-    return zones.value[zone] ?? 'Неизвестно'
-  }
-
   function getStatusInfo(status) {
     return STOCK_STATUS[status] ?? { label: 'Неизвестно', color: 'gray', icon: '?' }
   }
 
   function getCategoryName(category) {
-    return CATEGORIES[category] ?? 'Другое'
-  }
-
-  function groupedByZone() {
-    const groups = {}
-    for (const p of products.value) {
-      const zone = p.storageZone
-      if (!groups[zone]) groups[zone] = []
-      groups[zone].push(p)
-    }
-    return groups
+    return CATEGORIES.value[category] ?? 'Прочее'
   }
 
   return {
-    products, loading, error, zones,
-    fetchProducts, addProduct, updateProduct, deleteProduct, toggleStock,
-    getZoneName, getStatusInfo, getCategoryName, groupedByZone,
-    addZone, removeZone, fallbackZone,
-    STOCK_STATUS, CATEGORIES
+    products, loading, error, CATEGORIES, STOCK_STATUS,
+    fetchCategories, fetchProducts, addProduct, updateProduct, deleteProduct, toggleStock,
+    getStatusInfo, getCategoryName
   }
 })

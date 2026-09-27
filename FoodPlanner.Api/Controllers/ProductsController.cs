@@ -24,13 +24,13 @@ public class ProductsController : ControllerBase
         return product == null ? NotFound() : Ok(product);
     }
 
-    [HttpGet("zone/{zone}")]
-    public async Task<ActionResult<List<Product>>> GetByZone(StorageZone zone)
-        => await _service.GetByZoneAsync(zone);
-
     [HttpGet("category/{category}")]
     public async Task<ActionResult<List<Product>>> GetByCategory(ProductCategory category)
         => await _service.GetByCategoryAsync(category);
+
+    [HttpGet("categories")]
+    public ActionResult<List<object>> GetCategories()
+        => Ok(Enum.GetValues<ProductCategory>().Select(c => new { id = (int)c, name = c.GetDisplayName() }));
 
     [HttpGet("status/{status}")]
     public async Task<ActionResult<List<Product>>> GetByStatus(StockStatus status)

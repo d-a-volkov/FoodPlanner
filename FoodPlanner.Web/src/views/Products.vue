@@ -5,15 +5,14 @@ import { useProductsStore } from '../stores/products'
 const store = useProductsStore()
 
 const searchQuery = ref('')
-const filterZone = ref('')
+const filterCategory = ref('')
 const filterStatus = ref('')
 const showAddModal = ref(false)
 const editingProduct = ref(null)
 
 const form = ref({
   name: '',
-  storageZone: 0,
-  category: 10,
+  category: 0,
   stockStatus: 1,
   hasReserve: false,
   defaultUnit: 0,
@@ -30,8 +29,8 @@ const filteredProducts = computed(() => {
     const q = searchQuery.value.toLowerCase()
     list = list.filter(p => p.name.toLowerCase().includes(q))
   }
-  if (filterZone.value !== '') {
-    list = list.filter(p => p.storageZone === Number(filterZone.value))
+  if (filterCategory.value !== '') {
+    list = list.filter(p => p.category === Number(filterCategory.value))
   }
   if (filterStatus.value !== '') {
     list = list.filter(p => p.stockStatus === Number(filterStatus.value))
@@ -42,63 +41,28 @@ const filteredProducts = computed(() => {
 const groupedProducts = computed(() => {
   const groups = {}
   for (const p of filteredProducts.value) {
-    const zone = p.storageZone
-    if (!groups[zone]) groups[zone] = []
-    groups[zone].push(p)
+    const category = p.category
+    if (!groups[category]) groups[category] = []
+    groups[category].push(p)
   }
   return groups
 })
 
-const collapsedZones = ref(JSON.parse(localStorage.getItem('collapsedZones') || '{}'))
+const collapsedCategories = ref(JSON.parse(localStorage.getItem('collapsedCategories') || '{}'))
 
-function isCollapsed(zone) {
-  return !!collapsedZones.value[zone]
+function isCollapsed(category) {
+  return !!collapsedCategories.value[category]
 }
 
-function toggleZone(zone) {
-  collapsedZones.value[zone] = !collapsedZones.value[zone]
-  localStorage.setItem('collapsedZones', JSON.stringify(collapsedZones.value))
+function toggleCategory(category) {
+  collapsedCategories.value[category] = !collapsedCategories.value[category]
+  localStorage.setItem('collapsedCategories', JSON.stringify(collapsedCategories.value))
 }
 
-function zoneCounts(products) {
+function categoryCounts(products) {
   const total = products.length
   const inStock = products.filter(p => p.stockStatus === 0).length
   return { inStock, total }
-}
-
-const showZonesModal = ref(false)
-const newZoneName = ref('')
-
-function zoneProductCount(zone) {
-  return store.products.filter(p => p.storageZone === Number(zone)).length
-}
-
-function addZone() {
-  const name = newZoneName.value.trim()
-  if (!name) return
-  newZoneName.value = ''
-  store.addZone(name)
-}
-
-async function removeZone(zone) {
-  const zoneId = Number(zone)
-  const name = store.getZoneName(zoneId)
-  const count = zoneProductCount(zone)
-  if (Object.keys(store.zones).length <= 1) {
-    alert('Нельзя удалить последнюю зону')
-    return
-  }
-  if (count > 0) {
-    const targetId = store.fallbackZone(zoneId)
-    const targetName = store.getZoneName(targetId)
-    if (!confirm(`В зоне «${name}» — ${count} прод. Переместить их в «${targetName}» и удалить зону?`)) return
-  } else if (!confirm(`Удалить зону «${name}»?`)) return
-  await store.removeZone(zoneId)
-  if (Object.prototype.hasOwnProperty.call(collapsedZones.value, String(zoneId))) {
-    delete collapsedZones.value[String(zoneId)]
-    localStorage.setItem('collapsedZones', JSON.stringify(collapsedZones.value))
-  }
-  if (filterZone.value === String(zoneId)) filterZone.value = ''
 }
 
 const stats = computed(() => ({
@@ -110,6 +74,7 @@ const stats = computed(() => ({
 }))
 
 onMounted(() => {
+  store.fetchCategories()
   store.fetchProducts()
 })
 
@@ -117,8 +82,7 @@ function openAdd() {
   editingProduct.value = null
   form.value = {
     name: '',
-    storageZone: 0,
-    category: 10,
+    category: 0,
     stockStatus: 1,
     hasReserve: false,
     defaultUnit: 0,
@@ -180,33 +144,31 @@ async function toggleStock(product) {
         placeholder="Поиск продукта..."
         class="search-input"
       />
-      <select v-model="filterZone" class="filter-select">
-        <option value="">Все зоны</option>
-        <option v-for="(name, key) in store.zones" :key="key" :value="key">{{ name }}</option>
+      <select v-model="filterCategory" class="filter-select">
+        <option value="">Все категории</option>
+        <option v-for="(name, key) in store.CATEGORIES" :key="key" :value="key">{{ name }}</option>
       </select>
       <select v-model="filterStatus" class="filter-select">
         <option value="">Все статусы</option>
         <option v-for="(info, key) in store.STOCK_STATUS" :key="key" :value="key">{{ info.label }}</option>
       </select>
-      <button class="btn" @click="showZonesModal = true">⚙ Зоны</button>
       <button class="btn btn-primary" @click="openAdd">+ Добавить продукт</button>
     </div>
 
     <div v-if="store.loading" class="loading">Загрузка...</div>
     <div v-else-if="store.error" class="error">{{ store.error }}</div>
 
-    <div v-for="(products, zone) in groupedProducts" :key="zone" class="zone-group">
-      <button type="button" class="zone-header" @click="toggleZone(zone)">
-        <span class="zone-caret">{{ isCollapsed(zone) ? '▸' : '▾' }}</span>
-        <span class="zone-name">{{ store.getZoneName(Number(zone)) }}</span>
-        <span class="zone-counts">{{ zoneCounts(products).inStock }} в наличии / {{ zoneCounts(products).total }} всего</span>
+    <div v-for="(products, category) in groupedProducts" :key="category" class="category-group">
+      <button type="button" class="category-header" @click="toggleCategory(category)">
+        <span class="category-caret">{{ isCollapsed(category) ? '▸' : '▾' }}</span>
+        <span class="category-name">{{ store.getCategoryName(Number(category)) }}</span>
+        <span class="category-counts">{{ categoryCounts(products).inStock }} в наличии / {{ categoryCounts(products).total }} всего</span>
       </button>
-      <table v-if="!isCollapsed(zone)" class="products-table">
+      <table v-if="!isCollapsed(category)" class="products-table">
         <thead>
           <tr>
             <th>Статус</th>
             <th>Название</th>
-            <th>Категория</th>
             <th>Запас</th>
             <th>Действия</th>
           </tr>
@@ -229,7 +191,6 @@ async function toggleStock(product) {
               </span>
             </td>
             <td class="product-name">{{ product.name }}</td>
-            <td>{{ store.getCategoryName(product.category) }}</td>
             <td>
               <span v-if="product.hasReserve" class="reserve-badge">+</span>
             </td>
@@ -254,20 +215,13 @@ async function toggleStock(product) {
             <label>Название</label>
             <input v-model="form.name" type="text" required />
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Зона хранения</label>
-              <select v-model="form.storageZone">
-                <option v-for="(name, key) in store.zones" :key="key" :value="Number(key)">{{ name }}</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Категория</label>
-              <select v-model="form.category">
-                <option v-for="(name, key) in store.CATEGORIES" :key="key" :value="Number(key)">{{ name }}</option>
-              </select>
-            </div>
+          <div v-if="editingProduct" class="form-group">
+            <label>Категория</label>
+            <select v-model="form.category">
+              <option v-for="(name, key) in store.CATEGORIES" :key="key" :value="Number(key)">{{ name }}</option>
+            </select>
           </div>
+          <p v-else class="form-hint">Категория определится автоматически по названию продукта.</p>
           <div class="form-row">
             <div class="form-group">
               <label>Статус</label>
@@ -302,31 +256,6 @@ async function toggleStock(product) {
             <button type="submit" class="btn btn-primary">Сохранить</button>
           </div>
         </form>
-      </div>
-    </div>
-
-    <div v-if="showZonesModal" class="modal-overlay" @click.self="showZonesModal = false">
-      <div class="modal">
-        <h2>Зоны хранения</h2>
-        <div class="zone-edit-list">
-          <div v-for="(name, key) in store.zones" :key="key" class="zone-edit-item">
-            <span class="zone-edit-name">{{ name }}</span>
-            <span class="zone-edit-count">{{ zoneProductCount(key) }} прод.</span>
-            <button type="button" class="btn btn-small btn-danger" @click="removeZone(key)">✕</button>
-          </div>
-        </div>
-        <div class="add-zone-row">
-          <input
-            v-model="newZoneName"
-            type="text"
-            placeholder="Новая зона..."
-            @keyup.enter="addZone"
-          />
-          <button type="button" class="btn btn-primary" @click="addZone">+ Добавить</button>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn" @click="showZonesModal = false">Готово</button>
-        </div>
       </div>
     </div>
   </div>
@@ -375,19 +304,11 @@ h1 { margin-top: 0; color: #333; }
   font-size: 14px;
 }
 
-.zone-group {
+.category-group {
   margin-bottom: 25px;
 }
 
-.zone-title {
-  font-size: 1.1rem;
-  color: #555;
-  margin-bottom: 8px;
-  padding-bottom: 5px;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-.zone-header {
+.category-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -405,7 +326,7 @@ h1 { margin-top: 0; color: #333; }
   -webkit-tap-highlight-color: transparent;
 }
 
-.zone-caret {
+.category-caret {
   font-size: 0.75rem;
   color: #999;
   width: 14px;
@@ -413,9 +334,9 @@ h1 { margin-top: 0; color: #333; }
   transition: transform 0.15s;
 }
 
-.zone-name { font-weight: 600; color: #444; margin-right: auto; }
+.category-name { font-weight: 600; color: #444; margin-right: auto; }
 
-.zone-counts {
+.category-counts {
   font-size: 0.8rem;
   color: #666;
   font-weight: 400;
@@ -477,6 +398,12 @@ h1 { margin-top: 0; color: #333; }
   border-radius: 4px;
   padding: 2px 6px;
   font-weight: bold;
+}
+
+.form-hint {
+  font-size: 0.8rem;
+  color: #888;
+  margin: 0 0 12px;
 }
 
 .btn {
@@ -544,38 +471,6 @@ h1 { margin-top: 0; color: #333; }
   margin-top: 20px;
 }
 
-.zone-edit-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-  max-height: 320px;
-  overflow-y: auto;
-}
-.zone-edit-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #f9f9f9;
-  border-radius: 8px;
-  border: 1px solid #eee;
-}
-.zone-edit-name { font-weight: 500; flex: 1; }
-.zone-edit-count { font-size: 0.8rem; color: #888; white-space: nowrap; }
-.add-zone-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.add-zone-row input {
-  flex: 1;
-  padding: 8px 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
 @media (max-width: 767px) {
   h1 { font-size: 1.4rem; }
 
@@ -618,8 +513,7 @@ h1 { margin-top: 0; color: #333; }
     border-top: none;
     padding: 0;
   }
-  .products-table td:nth-child(3),
-  .products-table td:nth-child(4) { display: none; }
+  .products-table td:nth-child(3) { display: none; }
   .status-badge { width: 32px; height: 32px; }
   .btn-small { padding: 6px 10px; }
 
@@ -643,25 +537,13 @@ h1 { margin-top: 0; color: #333; }
     font-size: 15px;
   }
 
-  .zone-header {
+  .category-header {
     padding: 12px 4px;
     font-size: 1rem;
   }
-  .zone-counts {
+  .category-counts {
     font-size: 0.72rem;
     padding: 3px 8px;
-  }
-
-  .zone-edit-item {
-    padding: 12px;
-  }
-  .zone-edit-item .btn-small {
-    padding: 8px 12px;
-    font-size: 14px;
-  }
-  .add-zone-row .btn {
-    padding: 12px;
-    font-size: 14px;
   }
 }
 </style>

@@ -68,7 +68,6 @@ public class FoodPlannerApiClient : IDisposable
         {
             Id = product.Id,
             Name = product.Name,
-            StorageZone = product.StorageZone,
             Category = product.Category,
             StockStatus = product.StockStatus == StockStatus.InStock ? StockStatus.OutOfStock : StockStatus.InStock,
             HasReserve = product.HasReserve,

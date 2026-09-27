@@ -1,6 +1,7 @@
 using FoodPlanner.Core.Enums;
 using FoodPlanner.Core.Interfaces;
 using FoodPlanner.Core.Models;
+using FoodPlanner.Core.Services;
 
 namespace FoodPlanner.Services.Services;
 
@@ -15,12 +16,6 @@ public class ProductService : IProductService
 
     public async Task<List<Product>> GetAllAsync()
         => await _storage.GetAllAsync();
-
-    public async Task<List<Product>> GetByZoneAsync(StorageZone zone)
-    {
-        var products = await _storage.GetAllAsync();
-        return products.Where(p => p.StorageZone == zone).ToList();
-    }
 
     public async Task<List<Product>> GetByCategoryAsync(ProductCategory category)
     {
@@ -40,6 +35,7 @@ public class ProductService : IProductService
     public async Task<Product> CreateAsync(Product product)
     {
         product.Id = Guid.NewGuid();
+        product.Category = ProductCategoryDetector.Detect(product.Name);
         return await _storage.CreateAsync(product);
     }
 
@@ -55,5 +51,16 @@ public class ProductService : IProductService
         return products
             .Where(p => p.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
             .ToList();
+    }
+
+    public async Task RecategorizeAllAsync()
+    {
+        var products = await _storage.GetAllAsync();
+        if (products.Count == 0) return;
+
+        foreach (var product in products)
+            product.Category = ProductCategoryDetector.Detect(product.Name);
+
+        await _storage.SaveAllAsync(products);
     }
 }

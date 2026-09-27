@@ -100,7 +100,7 @@ async function createShoppingFromMissing(recipe) {
 
       <div class="ratios-section">
         <h2>Детали по категориям</h2>
-        <div v-for="ratio in hpStore.analysis.ratios" :key="ratio.category" class="ratio-card">
+        <div v-for="ratio in hpStore.analysis.ratios" :key="ratio.displayName" class="ratio-card">
           <div class="ratio-header">
             <span class="ratio-name">{{ ratio.displayName }}</span>
             <span class="ratio-values">
