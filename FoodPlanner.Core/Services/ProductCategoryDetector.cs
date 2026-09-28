@@ -172,8 +172,7 @@ public static class ProductCategoryDetector
         ("голубц", ProductCategory.Frozen),
         ("полуфабрик", ProductCategory.Frozen),
         ("палочк", ProductCategory.Frozen),
-        ("наггес", ProductCategory.Frozen),
-        ("нагегс", ProductCategory.Frozen),
+        ("наггетс", ProductCategory.Frozen),
         ("гренки", ProductCategory.Frozen),
         ("картофель фри", ProductCategory.Frozen),
 
