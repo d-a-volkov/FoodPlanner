@@ -16,8 +16,11 @@ builder.Services.AddSingleton<IJsonStorageService<Recipe>>(new JsonStorageServic
     Path.Combine(dataPath, "recipes.json")));
 builder.Services.AddSingleton<IJsonStorageService<ShoppingList>>(new JsonStorageService<ShoppingList>(
     Path.Combine(dataPath, "shoppinglists.json")));
+builder.Services.AddSingleton<IJsonStorageService<CustomCategory>>(new JsonStorageService<CustomCategory>(
+    Path.Combine(dataPath, "categories.json")));
 
 builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
 builder.Services.AddScoped<IHarvardPlateService, HarvardPlateService>();
 builder.Services.AddScoped<IShoppingListService, ShoppingListService>();

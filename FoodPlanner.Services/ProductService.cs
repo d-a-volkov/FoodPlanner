@@ -8,10 +8,12 @@ namespace FoodPlanner.Services.Services;
 public class ProductService : IProductService
 {
     private readonly IJsonStorageService<Product> _storage;
+    private readonly ICategoryService _categories;
 
-    public ProductService(IJsonStorageService<Product> storage)
+    public ProductService(IJsonStorageService<Product> storage, ICategoryService categories)
     {
         _storage = storage;
+        _categories = categories;
     }
 
     public async Task<List<Product>> GetAllAsync()
@@ -35,7 +37,14 @@ public class ProductService : IProductService
     public async Task<Product> CreateAsync(Product product)
     {
         product.Id = Guid.NewGuid();
-        product.Category = ProductCategoryDetector.Detect(product.Name);
+
+        // Категорию из формы нельзя затирать: пользователь подтверждает
+        // предложенную детектором и имеет право её исправить.
+        // Детектор - только запасной вариант, если категория не передана
+        // или ссылается на несуществующую (в т.ч. удалённую пользовательскую).
+        if (!await _categories.ExistsAsync((int)product.Category))
+            product.Category = ProductCategoryDetector.Detect(product.Name);
+
         return await _storage.CreateAsync(product);
     }
 
@@ -58,8 +67,11 @@ public class ProductService : IProductService
         var products = await _storage.GetAllAsync();
         if (products.Count == 0) return;
 
+        // Только встроенные: детектор ничего не знает про пользовательские
+        // категории и сбросил бы их в "Прочее".
         foreach (var product in products)
-            product.Category = ProductCategoryDetector.Detect(product.Name);
+            if (Enum.IsDefined(product.Category))
+                product.Category = ProductCategoryDetector.Detect(product.Name);
 
         await _storage.SaveAllAsync(products);
     }

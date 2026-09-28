@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useProductsStore } from '../stores/products'
+import { productsApi } from '../api'
 
 const store = useProductsStore()
 
@@ -44,6 +45,9 @@ const groupedProducts = computed(() => {
     const category = p.category
     if (!groups[category]) groups[category] = []
     groups[category].push(p)
+  }
+  for (const list of Object.values(groups)) {
+    list.sort((a, b) => store.rankOf(a) - store.rankOf(b))
   }
   return groups
 })
@@ -92,13 +96,134 @@ function openAdd() {
     carbsPer100g: 0,
     quantityInStock: 0
   }
+  categoryTouched.value = false
+  detectedCategory.value = null
   showAddModal.value = true
 }
 
 function openEdit(product) {
   editingProduct.value = product
   form.value = { ...product }
+  categoryTouched.value = true
+  detectedCategory.value = product.category
   showAddModal.value = true
+}
+
+// Категорию предлагает серверный детектор (тот же, что и при авторазметке),
+// но выбор всегда можно переопределить до сохранения.
+let detectTimer = null
+const detectedCategory = ref(null)
+const categoryTouched = ref(false)
+
+const categoryDetectedName = computed(() => {
+  if (detectedCategory.value === null) return ''
+  const names = store.CATEGORIES[detectedCategory.value]
+  return names || ''
+})
+
+watch(() => form.value.name, (name) => {
+  if (editingProduct.value || categoryTouched.value) return
+  clearTimeout(detectTimer)
+  const trimmed = (name || '').trim()
+  if (trimmed.length < 2) {
+    detectedCategory.value = null
+    form.value.category = 0
+    return
+  }
+  detectTimer = setTimeout(async () => {
+    try {
+      const { data } = await productsApi.detectCategory(trimmed)
+      detectedCategory.value = data.category
+      if (!categoryTouched.value) form.value.category = data.category
+    } catch {
+      detectedCategory.value = null
+    }
+  }, 350)
+})
+
+function onCategoryChange() {
+  categoryTouched.value = true
+}
+
+// ---- управление категориями ----
+const showCategoriesModal = ref(false)
+const newCategoryName = ref('')
+const editingCategoryId = ref(null)
+const editingCategoryName = ref('')
+const categoryError = ref('')
+const categoryBusy = ref(false)
+
+const customCategories = computed(() => store.categoryList.filter(c => c.isCustom))
+const builtinCategories = computed(() => store.categoryList.filter(c => !c.isCustom))
+
+function openCategories() {
+  categoryError.value = ''
+  newCategoryName.value = ''
+  editingCategoryId.value = null
+  editingCategoryName.value = ''
+  showCategoriesModal.value = true
+}
+
+function startRenameCategory(cat) {
+  editingCategoryId.value = cat.id
+  editingCategoryName.value = cat.name
+  categoryError.value = ''
+}
+
+function cancelRenameCategory() {
+  editingCategoryId.value = null
+  editingCategoryName.value = ''
+}
+
+function errorText(e) {
+  return e?.response?.data?.error || e.message || 'Неизвестная ошибка'
+}
+
+async function addCategory() {
+  const name = newCategoryName.value.trim()
+  if (!name) return
+  categoryBusy.value = true
+  categoryError.value = ''
+  try {
+    await store.createCategory(name)
+    newCategoryName.value = ''
+  } catch (e) {
+    categoryError.value = errorText(e)
+  } finally {
+    categoryBusy.value = false
+  }
+}
+
+async function saveRenameCategory() {
+  const name = editingCategoryName.value.trim()
+  if (!name) return
+  categoryBusy.value = true
+  categoryError.value = ''
+  try {
+    await store.renameCategory(editingCategoryId.value, name)
+    cancelRenameCategory()
+  } catch (e) {
+    categoryError.value = errorText(e)
+  } finally {
+    categoryBusy.value = false
+  }
+}
+
+async function removeCategory(cat) {
+  if (cat.productCount > 0) {
+    categoryError.value = `В категории «${cat.name}» ещё ${cat.productCount} шт. Сначала перенесите их в другую категорию.`
+    return
+  }
+  if (!confirm(`Удалить категорию «${cat.name}»?`)) return
+  categoryBusy.value = true
+  categoryError.value = ''
+  try {
+    await store.deleteCategory(cat.id)
+  } catch (e) {
+    categoryError.value = errorText(e)
+  } finally {
+    categoryBusy.value = false
+  }
 }
 
 async function saveProduct() {
@@ -152,6 +277,7 @@ async function toggleStock(product) {
         <option value="">Все статусы</option>
         <option v-for="(info, key) in store.STOCK_STATUS" :key="key" :value="key">{{ info.label }}</option>
       </select>
+      <button class="btn" @click="openCategories">Категории</button>
       <button class="btn btn-primary" @click="openAdd">+ Добавить продукт</button>
     </div>
 
@@ -215,13 +341,17 @@ async function toggleStock(product) {
             <label>Название</label>
             <input v-model="form.name" type="text" required />
           </div>
-          <div v-if="editingProduct" class="form-group">
+          <div class="form-group">
             <label>Категория</label>
-            <select v-model="form.category">
+            <select v-model="form.category" @change="onCategoryChange">
               <option v-for="(name, key) in store.CATEGORIES" :key="key" :value="Number(key)">{{ name }}</option>
             </select>
+            <p v-if="!categoryTouched && categoryDetectedName" class="form-hint auto-category">
+              Определено автоматически: <strong>{{ categoryDetectedName }}</strong>. Подтвердите или выберите другую категорию.
+            </p>
+            <p v-else-if="editingProduct" class="form-hint">Категория сохранится как выбрана.</p>
+            <p v-else class="form-hint">Категория подставляется по названию. Если предложена неверно — выберите нужную.</p>
           </div>
-          <p v-else class="form-hint">Категория определится автоматически по названию продукта.</p>
           <div class="form-row">
             <div class="form-group">
               <label>Статус</label>
@@ -256,6 +386,64 @@ async function toggleStock(product) {
             <button type="submit" class="btn btn-primary">Сохранить</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div v-if="showCategoriesModal" class="modal-overlay" @click.self="showCategoriesModal = false">
+      <div class="modal modal-categories">
+        <h2>Категории продуктов</h2>
+
+        <p class="form-hint">
+          Встроенные категории (овощи, мясо, молочное и т.д.) удалить нельзя — на них завязаны
+          автоопределение и фильтры. Свои категории можно добавлять, переименовывать и удалять,
+          пока в них пусто.
+        </p>
+
+        <div class="category-add-row">
+          <input
+            v-model="newCategoryName"
+            type="text"
+            maxlength="60"
+            placeholder="Название новой категории"
+            @keyup.enter="addCategory"
+          />
+          <button type="button" class="btn btn-primary" :disabled="categoryBusy || !newCategoryName.trim()" @click="addCategory">
+            Добавить
+          </button>
+        </div>
+
+        <p v-if="categoryError" class="category-error">{{ categoryError }}</p>
+
+        <h3 class="cat-section-title">Свои категории ({{ customCategories.length }})</h3>
+        <p v-if="!customCategories.length" class="form-hint">Пока нет ни одной своей категории.</p>
+        <ul class="cat-list">
+          <li v-for="cat in customCategories" :key="cat.id" class="cat-item">
+            <template v-if="editingCategoryId === cat.id">
+              <input v-model="editingCategoryName" type="text" maxlength="60" @keyup.enter="saveRenameCategory" @keyup.esc="cancelRenameCategory" />
+              <span class="cat-count">{{ cat.productCount }} шт.</span>
+              <button type="button" class="btn btn-primary" :disabled="categoryBusy" @click="saveRenameCategory">ОК</button>
+              <button type="button" class="btn" @click="cancelRenameCategory">Отмена</button>
+            </template>
+            <template v-else>
+              <span class="cat-name">{{ cat.name }}</span>
+              <span class="cat-count">{{ cat.productCount }} шт.</span>
+              <button type="button" class="btn" @click="startRenameCategory(cat)">Переименовать</button>
+              <button type="button" class="btn btn-danger" :disabled="categoryBusy" @click="removeCategory(cat)">Удалить</button>
+            </template>
+          </li>
+        </ul>
+
+        <h3 class="cat-section-title">Встроенные ({{ builtinCategories.length }})</h3>
+        <ul class="cat-list cat-list-builtin">
+          <li v-for="cat in builtinCategories" :key="cat.id" class="cat-item">
+            <span class="cat-name">{{ cat.name }}</span>
+            <span class="cat-count">{{ cat.productCount }} шт.</span>
+          </li>
+        </ul>
+
+        <div class="modal-actions">
+          <button type="button" class="btn" @click="showCategoriesModal = false">Закрыть</button>
+        </div>
       </div>
     </div>
   </div>
@@ -405,6 +593,14 @@ h1 { margin-top: 0; color: #333; }
   color: #888;
   margin: 0 0 12px;
 }
+.form-hint.auto-category {
+  color: #1976d2;
+  background: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 6px 0 0;
+}
 
 .btn {
   padding: 8px 16px;
@@ -449,6 +645,48 @@ h1 { margin-top: 0; color: #333; }
   overflow-y: auto;
 }
 .modal h2 { margin-top: 0; }
+.modal-categories { max-width: 560px; }
+.category-add-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.category-add-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.category-add-row input:focus { outline: none; border-color: #1976d2; }
+.category-error {
+  color: #c62828;
+  background: #ffebee;
+  border: 1px solid #ffcdd2;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  margin: 0 0 10px;
+}
+.cat-section-title { font-size: 0.9rem; color: #555; margin: 14px 0 6px; }
+.cat-list { list-style: none; margin: 0 0 4px; padding: 0; }
+.cat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.cat-name { flex: 1; min-width: 0; font-size: 0.9rem; color: #333; }
+.cat-item input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.cat-item input:focus { outline: none; border-color: #1976d2; }
+.cat-count { font-size: 0.8rem; color: #888; white-space: nowrap; }
+.cat-list-builtin .cat-name { color: #777; }
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; }
 .form-group input, .form-group select {

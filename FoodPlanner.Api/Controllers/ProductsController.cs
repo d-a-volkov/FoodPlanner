@@ -1,6 +1,7 @@
 using FoodPlanner.Core.Enums;
 using FoodPlanner.Core.Interfaces;
 using FoodPlanner.Core.Models;
+using FoodPlanner.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FoodPlanner.Api.Controllers;
@@ -10,8 +11,13 @@ namespace FoodPlanner.Api.Controllers;
 public class ProductsController : ControllerBase
 {
     private readonly IProductService _service;
+    private readonly ICategoryService _categories;
 
-    public ProductsController(IProductService service) => _service = service;
+    public ProductsController(IProductService service, ICategoryService categories)
+    {
+        _service = service;
+        _categories = categories;
+    }
 
     [HttpGet]
     public async Task<ActionResult<List<Product>>> GetAll()
@@ -29,8 +35,8 @@ public class ProductsController : ControllerBase
         => await _service.GetByCategoryAsync(category);
 
     [HttpGet("categories")]
-    public ActionResult<List<object>> GetCategories()
-        => Ok(Enum.GetValues<ProductCategory>().Select(c => new { id = (int)c, name = c.GetDisplayName() }));
+    public async Task<ActionResult<List<CategoryDto>>> GetCategories()
+        => await _categories.GetAllAsync();
 
     [HttpGet("status/{status}")]
     public async Task<ActionResult<List<Product>>> GetByStatus(StockStatus status)
@@ -39,6 +45,16 @@ public class ProductsController : ControllerBase
     [HttpGet("search")]
     public async Task<ActionResult<List<Product>>> Search([FromQuery] string q)
         => await _service.SearchAsync(q);
+
+    // Категория, которую детектор предложит в форме добавления. Клиент показывает
+    // её как предложение по умолчанию, но пользователь может её переопределить.
+    [HttpGet("detect-category")]
+    public ActionResult<object> DetectCategory([FromQuery] string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Ok(new { category = -1, categoryName = string.Empty });
+        var category = ProductCategoryDetector.Detect(name);
+        return Ok(new { category = (int)category, categoryName = category.GetDisplayName() });
+    }
 
     [HttpPost]
     public async Task<ActionResult<Product>> Create([FromBody] Product product)

@@ -29,13 +29,24 @@ public class JsonStorageService<T> : IJsonStorageService<T> where T : class
             File.WriteAllText(_filePath, "[]");
     }
 
+    private static bool IdEquals(object? item, Guid id)
+        => item?.GetType().GetProperty("Id")?.GetValue(item) is Guid gid && gid == id;
+
+    private async Task<List<T>> ReadAllAsync()
+    {
+        var json = await File.ReadAllTextAsync(_filePath);
+        return JsonSerializer.Deserialize<List<T>>(json, JsonOptions) ?? [];
+    }
+
+    private async Task WriteAllAsync(List<T> entities)
+        => await File.WriteAllTextAsync(_filePath, JsonSerializer.Serialize(entities, JsonOptions));
+
     public async Task<List<T>> GetAllAsync()
     {
         await _lock.WaitAsync();
         try
         {
-            var json = await File.ReadAllTextAsync(_filePath);
-            return JsonSerializer.Deserialize<List<T>>(json, JsonOptions) ?? [];
+            return await ReadAllAsync();
         }
         finally
         {
@@ -45,48 +56,73 @@ public class JsonStorageService<T> : IJsonStorageService<T> where T : class
 
     public async Task<T?> GetByIdAsync(Guid id)
     {
-        var items = await GetAllAsync();
-        var prop = typeof(T).GetProperty("Id");
-        return items.FirstOrDefault(i =>
-            prop?.GetValue(i) is Guid gid && gid == id);
+        await _lock.WaitAsync();
+        try
+        {
+            var items = await ReadAllAsync();
+            return items.FirstOrDefault(i => IdEquals(i, id));
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task<T> CreateAsync(T entity)
     {
-        var items = await GetAllAsync();
-        items.Add(entity);
-        await SaveAllAsync(items);
-        return entity;
+        await _lock.WaitAsync();
+        try
+        {
+            var items = await ReadAllAsync();
+            items.Add(entity);
+            await WriteAllAsync(items);
+            return entity;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task<T> UpdateAsync(T entity)
     {
-        var items = await GetAllAsync();
         var prop = typeof(T).GetProperty("Id");
         var id = prop?.GetValue(entity) as Guid?;
         if (id == null) throw new InvalidOperationException("Entity must have an Id property");
 
-        var index = items.FindIndex(i =>
-            prop?.GetValue(i) is Guid gid && gid == id.Value);
-        if (index == -1) throw new KeyNotFoundException($"Entity with Id {id} not found");
+        await _lock.WaitAsync();
+        try
+        {
+            var items = await ReadAllAsync();
+            var index = items.FindIndex(i => IdEquals(i, id.Value));
+            if (index == -1) throw new KeyNotFoundException($"Entity with Id {id} not found");
 
-        items[index] = entity;
-        await SaveAllAsync(items);
-        return entity;
+            items[index] = entity;
+            await WriteAllAsync(items);
+            return entity;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var items = await GetAllAsync();
-        var prop = typeof(T).GetProperty("Id");
-        var removed = items.RemoveAll(i =>
-            prop?.GetValue(i) is Guid gid && gid == id);
-        if (removed > 0)
+        await _lock.WaitAsync();
+        try
         {
-            await SaveAllAsync(items);
+            var items = await ReadAllAsync();
+            var removed = items.RemoveAll(i => IdEquals(i, id));
+            if (removed == 0) return false;
+
+            await WriteAllAsync(items);
             return true;
         }
-        return false;
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task SaveAllAsync(List<T> entities)
@@ -94,8 +130,7 @@ public class JsonStorageService<T> : IJsonStorageService<T> where T : class
         await _lock.WaitAsync();
         try
         {
-            var json = JsonSerializer.Serialize(entities, JsonOptions);
-            await File.WriteAllTextAsync(_filePath, json);
+            await WriteAllAsync(entities);
         }
         finally
         {

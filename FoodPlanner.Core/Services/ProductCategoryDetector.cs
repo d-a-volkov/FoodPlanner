@@ -6,6 +6,15 @@ public static class ProductCategoryDetector
 {
     private static readonly List<(string Keyword, ProductCategory Category)> Rules =
     [
+        // Приоритетные правила: проверяются первыми, чтобы более общие
+        // ключевые слова ниже не перехватывали эти продукты
+        ("соус", ProductCategory.Spices),
+        ("кетчуп", ProductCategory.Spices),
+        ("уксус", ProductCategory.Spices),
+        ("печень треск", ProductCategory.Canned),
+        ("печеньк", ProductCategory.Sweets),
+        ("печенье", ProductCategory.Sweets),
+
         // Сладости
         ("сгущен", ProductCategory.Sweets),
         ("шоколад", ProductCategory.Sweets),
@@ -18,7 +27,7 @@ public static class ProductCategoryDetector
         ("драже", ProductCategory.Sweets),
         ("батончик", ProductCategory.Sweets),
         ("вафл", ProductCategory.Sweets),
-        ("морожен", ProductCategory.Sweets),
+        ("мороженое", ProductCategory.Sweets),
         ("джем", ProductCategory.Sweets),
         ("варень", ProductCategory.Sweets),
         ("повидл", ProductCategory.Sweets),
@@ -27,6 +36,12 @@ public static class ProductCategoryDetector
         ("сахар", ProductCategory.Sweets),
         ("нутелл", ProductCategory.Sweets),
         ("жевательн", ProductCategory.Sweets),
+        ("сладост", ProductCategory.Sweets),
+        ("мармелад", ProductCategory.Sweets),
+        ("суфле", ProductCategory.Sweets),
+        ("профитроли", ProductCategory.Sweets),
+        ("чипсы", ProductCategory.Sweets),
+        ("сухофрукты", ProductCategory.Sweets),
 
         // Молочные
         ("сливочн", ProductCategory.Dairy),
@@ -40,6 +55,14 @@ public static class ProductCategoryDetector
         ("простокваш", ProductCategory.Dairy),
         ("ряженк", ProductCategory.Dairy),
         ("мацони", ProductCategory.Dairy),
+        ("сыворот", ProductCategory.Dairy),
+        ("айран", ProductCategory.Dairy),
+        ("брынза", ProductCategory.Dairy),
+        ("моцарелла", ProductCategory.Dairy),
+        ("гауда", ProductCategory.Dairy),
+        ("пармезан", ProductCategory.Dairy),
+        ("маскарпоне", ProductCategory.Dairy),
+        ("творожн", ProductCategory.Dairy),
 
         // Масла и жиры
         ("оливков", ProductCategory.OilsAndFats),
@@ -94,6 +117,10 @@ public static class ProductCategoryDetector
         ("водка", ProductCategory.Beverages),
         ("энергетик", ProductCategory.Beverages),
         ("вода", ProductCategory.Beverages),
+        ("минерал", ProductCategory.Beverages),
+        ("кола", ProductCategory.Beverages),
+        ("алкоголь", ProductCategory.Beverages),
+        ("коктейл", ProductCategory.Beverages),
 
         // Фрукты и ягоды
         ("яблок", ProductCategory.Fruits),
@@ -133,6 +160,8 @@ public static class ProductCategoryDetector
         ("фрукт", ProductCategory.Fruits),
         ("цитрус", ProductCategory.Fruits),
         ("ягод", ProductCategory.Fruits),
+        ("чёрри", ProductCategory.Fruits),
+        ("черри", ProductCategory.Fruits),
 
         // Замороженные продукты
         ("заморож", ProductCategory.Frozen),
@@ -143,6 +172,10 @@ public static class ProductCategoryDetector
         ("голубц", ProductCategory.Frozen),
         ("полуфабрик", ProductCategory.Frozen),
         ("палочк", ProductCategory.Frozen),
+        ("наггес", ProductCategory.Frozen),
+        ("нагегс", ProductCategory.Frozen),
+        ("гренки", ProductCategory.Frozen),
+        ("картофель фри", ProductCategory.Frozen),
 
         // Крупы и макароны
         ("круп", ProductCategory.Grains),
@@ -163,6 +196,7 @@ public static class ProductCategoryDetector
         ("хлопья", ProductCategory.Grains),
         ("кукуруз", ProductCategory.Grains),
         ("мюсл", ProductCategory.Grains),
+        ("фунчоз", ProductCategory.Grains),
 
         // Хлеб и выпечка
         ("хлеб", ProductCategory.Bakery),
@@ -193,6 +227,8 @@ public static class ProductCategoryDetector
         ("сушк", ProductCategory.Bakery),
         ("баранк", ProductCategory.Bakery),
         ("хлебц", ProductCategory.Bakery),
+        ("барни", ProductCategory.Bakery),
+        ("пицц", ProductCategory.Bakery),
 
         // Бобовые
         ("бобов", ProductCategory.Legumes),
@@ -230,7 +266,11 @@ public static class ProductCategoryDetector
         ("печёнк", ProductCategory.Meat),
 
         // Птица
+        ("курин", ProductCategory.Poultry),
         ("куриц", ProductCategory.Poultry),
+        ("грудк", ProductCategory.Poultry),
+        ("бедр", ProductCategory.Poultry),
+        ("окорочк", ProductCategory.Poultry),
         ("индейк", ProductCategory.Poultry),
         ("цыплен", ProductCategory.Poultry),
         ("цыплят", ProductCategory.Poultry),
@@ -277,6 +317,9 @@ public static class ProductCategoryDetector
         ("краб", ProductCategory.Seafood),
         ("лангуст", ProductCategory.Seafood),
         ("устриц", ProductCategory.Seafood),
+        ("рак", ProductCategory.Seafood),
+        ("гребеш", ProductCategory.Seafood),
+        ("морск", ProductCategory.Seafood),
 
         // Специи и приправы
         ("специ", ProductCategory.Spices),
@@ -352,6 +395,8 @@ public static class ProductCategoryDetector
         ("щавел", ProductCategory.Vegetables),
         ("гриб", ProductCategory.Vegetables),
         ("початк", ProductCategory.Vegetables),
+        ("топинамбур", ProductCategory.Vegetables),
+        ("батат", ProductCategory.Vegetables),
 
         // Зелень и салаты
         ("шпинат", ProductCategory.Greens),
@@ -363,6 +408,8 @@ public static class ProductCategoryDetector
         ("кинз", ProductCategory.Greens),
         ("базилик", ProductCategory.Greens),
         ("мят", ProductCategory.Greens),
+        ("шалфей", ProductCategory.Greens),
+        ("тимьян", ProductCategory.Greens),
     ];
 
     public static ProductCategory Detect(string name)

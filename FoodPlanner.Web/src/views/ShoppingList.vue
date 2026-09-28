@@ -70,6 +70,72 @@ const includeLow = ref(localStorage.getItem('includeLowStock') === '1')
 const selectedCategories = ref(new Set())
 const categoriesCollapsed = ref(localStorage.getItem('collapsedCategoriesList') === '1')
 
+// логические группы категорий, каждая сворачивается независимо
+const CATEGORY_GROUPS = [
+  { key: 'produce', label: 'Овощи, фрукты, зелень', ids: ['0', '1', '2'] },
+  { key: 'protein', label: 'Мясо, птица, рыба, яйца', ids: ['3', '4', '5', '6', '7'] },
+  { key: 'dairy', label: 'Молочное и масла', ids: ['8', '13'] },
+  { key: 'grain', label: 'Крупы, выпечка, бобовые, орехи', ids: ['9', '10', '11', '12'] },
+  { key: 'spices', label: 'Специи и сладости', ids: ['14', '17'] },
+  { key: 'canned', label: 'Консервы и замороженное', ids: ['15', '16'] },
+  { key: 'drinks', label: 'Напитки', ids: ['18'] },
+  { key: 'other', label: 'Прочее', ids: ['19'] }
+]
+
+const collapsedGroups = ref(JSON.parse(localStorage.getItem('collapsedCategoryGroups') || '{}'))
+
+const categoryGroups = computed(() => {
+  const all = productsStore.CATEGORIES
+  const used = new Set()
+  const groups = []
+
+  for (const g of CATEGORY_GROUPS) {
+    const items = g.ids
+      .filter(id => id in all)
+      .map(id => { used.add(id); return { key: id, name: all[id] } })
+    if (items.length) groups.push({ ...g, items })
+  }
+
+  const rest = Object.keys(all).filter(k => !used.has(k))
+  if (rest.length) {
+    groups.push({ key: 'rest', label: 'Другие категории', items: rest.map(k => ({ key: k, name: all[k] })) })
+  }
+  return groups
+})
+
+function isGroupCollapsed(key) {
+  return !!collapsedGroups.value[key]
+}
+
+function toggleGroupCollapse(key) {
+  collapsedGroups.value[key] = !collapsedGroups.value[key]
+  localStorage.setItem('collapsedCategoryGroups', JSON.stringify(collapsedGroups.value))
+}
+
+function collapseAllGroups(collapse) {
+  const next = {}
+  if (collapse) for (const g of categoryGroups.value) next[g.key] = true
+  collapsedGroups.value = next
+  localStorage.setItem('collapsedCategoryGroups', JSON.stringify(next))
+}
+
+function groupSelectedCount(group) {
+  return group.items.filter(i => selectedCategories.value.has(i.key)).length
+}
+
+function isGroupFullySelected(group) {
+  return group.items.length > 0 && groupSelectedCount(group) === group.items.length
+}
+
+function toggleGroup(group) {
+  if (isGroupFullySelected(group)) {
+    for (const i of group.items) selectedCategories.value.delete(i.key)
+  } else {
+    for (const i of group.items) selectedCategories.value.add(i.key)
+  }
+  persistSelectedCategories()
+}
+
 function persistSelectedCategories() {
   localStorage.setItem('selectedCategories', JSON.stringify([...selectedCategories.value]))
 }
@@ -191,18 +257,44 @@ function exportToTxt(list) {
         <span class="categories-actions" @click.stop>
           <button class="btn btn-small" @click="selectAllCategories">Все</button>
           <button class="btn btn-small" @click="clearCategories">Ничего</button>
+          <button class="btn btn-small" @click="collapseAllGroups(true)">Свернуть</button>
+          <button class="btn btn-small" @click="collapseAllGroups(false)">Развернуть</button>
         </span>
       </button>
-      <div v-if="!categoriesCollapsed" class="categories-grid">
-        <label
-          v-for="(name, key) in productsStore.CATEGORIES"
-          :key="key"
-          class="category-chip"
-          :class="{ active: selectedCategories.has(key) }"
-        >
-          <input type="checkbox" :checked="selectedCategories.has(key)" @change="toggleCategory(key)" />
-          <span>{{ name }}</span>
-        </label>
+      <div v-if="!categoriesCollapsed" class="categories-groups">
+        <div v-for="group in categoryGroups" :key="group.key" class="category-group-block">
+          <div class="category-group-head">
+            <button
+              type="button"
+              class="group-caret-btn"
+              :aria-expanded="!isGroupCollapsed(group.key)"
+              @click="toggleGroupCollapse(group.key)"
+            >
+              <span class="categories-caret">{{ isGroupCollapsed(group.key) ? '▸' : '▾' }}</span>
+              <span class="group-label">{{ group.label }}</span>
+            </button>
+            <label class="group-toggle" :class="{ active: isGroupFullySelected(group) }">
+              <input
+                type="checkbox"
+                :checked="isGroupFullySelected(group)"
+                :indeterminate="groupSelectedCount(group) > 0 && !isGroupFullySelected(group)"
+                @change="toggleGroup(group)"
+              />
+              <span class="group-count">{{ groupSelectedCount(group) }}/{{ group.items.length }}</span>
+            </label>
+          </div>
+          <div v-if="!isGroupCollapsed(group.key)" class="categories-grid">
+            <label
+              v-for="item in group.items"
+              :key="item.key"
+              class="category-chip"
+              :class="{ active: selectedCategories.has(item.key) }"
+            >
+              <input type="checkbox" :checked="selectedCategories.has(item.key)" @change="toggleCategory(item.key)" />
+              <span>{{ item.name }}</span>
+            </label>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -338,11 +430,55 @@ h2 { margin-top: 0; }
 }
 .categories-title { font-weight: 600; font-size: 0.9rem; color: #444; }
 .categories-summary { font-weight: 400; color: #888; }
-.categories-actions { display: flex; gap: 6px; }
+.categories-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.categories-groups { display: flex; flex-direction: column; gap: 10px; }
+.category-group-block {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+.category-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.group-caret-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.group-label { font-weight: 600; font-size: 0.85rem; color: #444; }
+.group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.group-toggle.active { background: #e3f2fd; border-color: #1976d2; }
+.group-toggle input { margin: 0; cursor: pointer; }
+.group-count { font-size: 0.75rem; color: #888; font-variant-numeric: tabular-nums; }
+.group-toggle.active .group-count { color: #1976d2; }
 .categories-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 8px;
 }
 .category-chip {
   display: inline-flex;

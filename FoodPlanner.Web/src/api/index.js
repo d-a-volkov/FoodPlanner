@@ -12,9 +12,17 @@ export const productsApi = {
   getByCategory: (category) => api.get(`/products/category/${category}`),
   getByStatus: (status) => api.get(`/products/status/${status}`),
   search: (q) => api.get('/products/search', { params: { q } }),
+  detectCategory: (name) => api.get('/products/detect-category', { params: { name } }),
   create: (product) => api.post('/products', product),
   update: (id, product) => api.put(`/products/${id}`, product),
   delete: (id) => api.delete(`/products/${id}`)
+}
+
+export const categoriesApi = {
+  getAll: () => api.get('/products/categories'),
+  create: (name) => api.post('/categories', { name }),
+  rename: (id, name) => api.put(`/categories/${id}`, { name }),
+  remove: (id) => api.delete(`/categories/${id}`)
 }
 
 export const recipesApi = {
