@@ -73,6 +73,21 @@ def _close_pending() -> None:
             pass
 
 
+def _discard_browser(pw) -> None:
+    """Гасит Playwright, если сессия не была сохранена в _pending.
+
+    Без этого неудачная попытка оставляет запущенный event loop в потоке
+    threadpool: следующий запрос, попавший в тот же поток, падает с
+    "Sync API inside the asyncio loop", а процессы Chromium копятся.
+    """
+    if pw is None:
+        return
+    try:
+        pw.stop()
+    except Exception:
+        pass
+
+
 def _watchdog() -> None:
     while True:
         with _pending_lock:
@@ -249,11 +264,11 @@ def request_code(phone: str) -> dict:
         send_btn.first.wait_for(state="visible", timeout=15000)
         send_btn.first.click()
         page.wait_for_timeout(1500)
-    except HTTPException:
-        _close_pending()
-        raise
+    except HTTPException as exc:
+        _discard_browser(pw)
+        raise exc
     except Exception as exc:
-        _close_pending()
+        _discard_browser(pw)
         raise HTTPException(500, f"Не удалось отправить SMS-код Купера: {exc}")
 
     with _pending_lock:
