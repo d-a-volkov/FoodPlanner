@@ -1,8 +1,7 @@
 """kuper-bridge: HTTP-прокси к неофициальному API Купера через curl_cffi.
 
-Обходит анти-бот ServicePipe by подменой TLS-отпечатка (impersonate).
-Требуется cookie из авторизованного браузера (web.kuper.ru):
-  _Instamart_session и anti-бот сookie ``spsc``.
+Вход в аккаунт — по телефону и SMS-коду через официальную страницу логина
+(headless Chromium, см. browser_auth). Либо классическая cookie из браузера.
 Cookie хранится только в файле состояния (внутренний том) и не логируется.
 
 Состояние сессии держится между перезапусками в JSON-файле
@@ -32,6 +31,7 @@ from kuper_api.exceptions import (
 )
 from kuper_api.order.order import Order
 
+import browser_auth
 import matcher
 
 STATE_FILE = os.environ.get("KUPER_STATE", "./kuper_state.json")
@@ -39,11 +39,13 @@ IMPERSONATE = os.environ.get("KUPER_IMPERSONATE", "chrome131")
 DEFAULT_LAT = 55.7558
 DEFAULT_LON = 37.6173
 
-app = FastAPI(title="kuper-bridge", version="0.1.0")
+app = FastAPI(title="kuper-bridge", version="0.2.0")
 
 
 class SessionSetup(BaseModel):
-    cookie: str = Field(..., min_length=10)
+    cookie: Optional[str] = None
+    phone: Optional[str] = None
+    code: Optional[str] = None
     lat: float = DEFAULT_LAT
     lon: float = DEFAULT_LON
 
@@ -172,7 +174,7 @@ def _serialize_store(store) -> dict:
 
 def _require_session() -> Client:
     if not _state.client:
-        raise HTTPException(409, "Сессия не настроена: вставьте cookie Купера.")
+        raise HTTPException(409, "Сессия не настроена: войдите в Купер по телефону.")
     return _state.client
 
 
@@ -184,7 +186,7 @@ def _require_store() -> int:
 
 def _map_error(exc: Exception) -> HTTPException:
     if isinstance(exc, Unauthorized):
-        return HTTPException(401, "Сессия не авторизована. Cookie просрочена — вставьте новую.")
+        return HTTPException(401, "Сессия не авторизована. Войдите в Купер заново по телефону.")
     if isinstance(exc, AntiBotChallenge):
         return HTTPException(423, "Kuper заблокировал IP анти-ботом (VPN/дата-центр). Нужен чистый IP.")
     if isinstance(exc, (NotFound, BadRequest, UnprocessableEntity)):
@@ -240,7 +242,17 @@ def health():
 
 @app.post("/session")
 def setup_session(payload: SessionSetup):
-    cookie = payload.cookie.strip()
+    if payload.phone and not payload.code:
+        return browser_auth.request_code(payload.phone)
+    if payload.phone and payload.code:
+        cookie = browser_auth.submit_code(payload.code)
+        return _finalize_session(cookie, payload.lat, payload.lon)
+    if payload.cookie:
+        return _finalize_session(payload.cookie.strip(), payload.lat, payload.lon)
+    raise HTTPException(400, "Укажите cookie, либо телефон и код из СМС.")
+
+
+def _finalize_session(cookie: str, lat: float, lon: float) -> dict:
     if not cookie:
         raise HTTPException(400, "Пустой cookie.")
     client = Client(cookie=cookie, impersonate=IMPERSONATE)
@@ -249,8 +261,8 @@ def setup_session(payload: SessionSetup):
     except KuperError as exc:
         raise _map_error(exc)
     if not profile:
-        raise HTTPException(401, "Cookie не дал профиль. Вставьте cookie из авторизованного браузера.")
-    stores = client.stores(payload.lat, payload.lon, per_page=50)
+        raise HTTPException(401, "Не удалось получить профиль: сессия не авторизована.")
+    stores = client.stores(lat, lon, per_page=50)
     _state.client = client
     pdata = profile.to_dict()
     _state.profile = {

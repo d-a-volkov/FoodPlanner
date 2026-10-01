@@ -11,6 +11,12 @@ const emit = defineEmits(['close'])
 const store = useKuperStore()
 
 const step = ref('connect') // connect | store | resolve | result
+const phone = ref('')
+const code = ref('')
+const awaitingCode = ref(false)
+const sending = ref(false)
+const confirming = ref(false)
+const manualCookie = ref(false)
 const cookie = ref('')
 const storesLoading = ref(false)
 const resolving = ref(false)
@@ -31,6 +37,11 @@ watch(() => props.show, async (v) => {
   error.value = ''
   rows.value = []
   result.value = null
+  phone.value = ''
+  code.value = ''
+  awaitingCode.value = false
+  manualCookie.value = false
+  cookie.value = ''
   try {
     await store.fetchStatus()
     await store.fetchSession()
@@ -49,7 +60,44 @@ function friendly(e) {
   return 'Неизвестная ошибка'
 }
 
-async function connect() {
+async function requestCode(resend = false) {
+  error.value = ''
+  if (!phone.value.trim()) {
+    error.value = 'Введите номер телефона'
+    return
+  }
+  sending.value = true
+  code.value = ''
+  try {
+    await store.sendCode(phone.value.trim())
+    awaitingCode.value = true
+  } catch (e) {
+    error.value = friendly(e)
+  } finally {
+    sending.value = false
+  }
+}
+
+async function confirmLogin() {
+  error.value = ''
+  if (!code.value.trim()) {
+    error.value = 'Введите код из СМС'
+    return
+  }
+  confirming.value = true
+  try {
+    await store.confirmCode(phone.value.trim(), code.value.trim())
+    awaitingCode.value = false
+    step.value = storeSelected.value ? 'resolve' : 'store'
+  } catch (e) {
+    error.value = friendly(e)
+    if (e?.response?.status === 410) awaitingCode.value = false
+  } finally {
+    confirming.value = false
+  }
+}
+
+async function connectByCookie() {
   error.value = ''
   if (!cookie.value.trim()) {
     error.value = 'Вставьте cookie из авторизованного браузера Купера'
@@ -57,7 +105,7 @@ async function connect() {
   }
   storesLoading.value = true
   try {
-    await store.connectSession(cookie.value.trim())
+    await store.confirmCodeByCookie?.(cookie.value.trim())
     cookie.value = ''
     step.value = storeSelected.value ? 'resolve' : 'store'
   } catch (e) {
@@ -187,20 +235,76 @@ async function resetSession() {
         <!-- Шаг: подключение -->
         <div v-if="step === 'connect'" class="kup-body">
           <p class="kup-hint">
-            Скопируйте cookie из авторизованного браузера
-            <a href="https://web.kuper.ru" target="_blank" rel="noopener">web.kuper.ru</a>
-            (DevTools → Network/Application → строка <code>_Instamart_session=...; spsc=...</code>)
-            и вставьте ниже. Cookie хранится только на вашем сервере.
+            Войдите в Купер по номеру телефона: запросите код в СМС, затем введите его.
+            Сессия хранится только на вашем сервере.
           </p>
-          <textarea
-            v-model="cookie"
-            class="kup-cookie"
-            rows="4"
-            placeholder="_Instamart_session=...; spsc=..."
-          ></textarea>
-          <button class="kup-btn kup-primary" :disabled="storesLoading" @click="connect">
-            {{ storesLoading ? 'Проверяем...' : 'Проверить и подключиться' }}
+
+          <label class="kup-select-label">
+            Номер телефона
+            <input
+              v-model="phone"
+              class="kup-cookie"
+              type="tel"
+              inputmode="tel"
+              autocomplete="tel"
+              placeholder="+7 912 345-67-89"
+              :disabled="awaitingCode"
+              @keyup.enter="requestCode()"
+            />
+          </label>
+
+          <button
+            v-if="!awaitingCode"
+            class="kup-btn kup-primary"
+            :disabled="sending || !phone.trim()"
+            @click="requestCode()"
+          >
+            {{ sending ? 'Отправляем код…' : 'Получить код в СМС' }}
           </button>
+
+          <div v-else class="kup-code-block">
+            <p class="kup-hint">
+              Код отправлен на номер <b>{{ phone }}</b>. Введите его из СМС.
+            </p>
+            <label class="kup-select-label">
+              Код из СМС
+              <input
+                v-model="code"
+                class="kup-cookie"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                placeholder="1234"
+                maxlength="8"
+                @keyup.enter="confirmLogin()"
+              />
+            </label>
+            <div class="kup-actions">
+              <button class="kup-btn kup-primary" :disabled="confirming || code.trim().length < 4" @click="confirmLogin">
+                {{ confirming ? 'Входим…' : 'Подтвердить и подключиться' }}
+              </button>
+              <button class="kup-btn" :disabled="sending" @click="requestCode(true)">Отправить код ещё раз</button>
+            </div>
+          </div>
+
+          <details class="kup-manual" @toggle="manualCookie = $event.target.open">
+            <summary>Не приходит СМС? Вставить cookie вручную</summary>
+            <p class="kup-hint">
+              Войдите на
+              <a href="https://web.kuper.ru" target="_blank" rel="noopener">web.kuper.ru</a> в браузере,
+              скопируйте строку <code>_Instamart_session=...; spsc=...</code>
+              (DevTools → Network → любой запрос к kuper.ru → заголовок cookie) и вставьте ниже.
+            </p>
+            <textarea
+              v-if="manualCookie"
+              v-model="cookie"
+              class="kup-cookie"
+              rows="3"
+              placeholder="_Instamart_session=...; spsc=..."
+            ></textarea>
+            <button v-if="manualCookie" class="kup-btn kup-small" :disabled="storesLoading" @click="connectByCookie">
+              {{ storesLoading ? 'Проверяем…' : 'Подключиться по cookie' }}
+            </button>
+          </details>
 
           <div v-if="store.status?.session?.has_cookie" class="kup-current">
             <span>Уже подключены</span>
@@ -413,6 +517,22 @@ async function resetSession() {
   gap: 10px;
   font-size: 0.85rem;
   color: #388e3c;
+}
+.kup-code-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.kup-manual {
+  border-top: 1px dashed #ddd;
+  padding-top: 10px;
+  font-size: 0.8rem;
+  color: #777;
+}
+.kup-manual summary { cursor: pointer; color: #1976d2; }
+.kup-manual code {
+  background: #f2f2f2; padding: 1px 5px; border-radius: 4px; font-size: 0.75rem;
+  word-break: break-all;
 }
 .kup-select-label { display: block; }
 .kup-select {

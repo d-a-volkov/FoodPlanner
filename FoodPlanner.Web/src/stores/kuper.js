@@ -42,11 +42,36 @@ export const useKuperStore = defineStore('kuper', () => {
     return data
   }
 
-  async function connectSession(cookie) {
+  async function sendCode(phone) {
     error.value = ''
     loading.value = true
     try {
-      const { data } = await kuperApi.connectSession(cookie)
+      const { data } = await kuperApi.sendCode(phone)
+      return data
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function confirmCode(phone, code) {
+    error.value = ''
+    loading.value = true
+    try {
+      const { data } = await kuperApi.confirmCode(phone, code)
+      profile.value = data.profile
+      stores.value = data.stores || []
+      status.value = { ok: true, session: { has_cookie: true, profile: true, store_selected: false } }
+      return data
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function confirmCodeByCookie(cookie) {
+    error.value = ''
+    loading.value = true
+    try {
+      const { data } = await kuperApi.connectCookie(cookie)
       profile.value = data.profile
       stores.value = data.stores || []
       status.value = { ok: true, session: { has_cookie: true, profile: true, store_selected: false } }
@@ -102,6 +127,6 @@ export const useKuperStore = defineStore('kuper', () => {
 
   return {
     status, profile, stores, selectedStoreId, storeName, cartUrl, loading, error,
-    fetchStatus, fetchSession, connectSession, selectStore, refreshHistory, resolve, addToCart, disconnect
+    fetchStatus, fetchSession, sendCode, confirmCode, confirmCodeByCookie, selectStore, refreshHistory, resolve, addToCart, disconnect
   }
 })

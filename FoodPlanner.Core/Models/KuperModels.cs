@@ -2,10 +2,16 @@ using System.Text.Json.Serialization;
 
 namespace FoodPlanner.Core.Models;
 
-/// <summary>Запрос подключения к аккаунту Купера (cookie из авторизованного браузера).</summary>
+/// <summary>Запрос подключения к аккаунту Купера.</summary>
+/// <remarks>
+/// Варианты: cookie из браузера; либо телефон (шаг 1 — запрос SMS-кода);
+/// либо телефон + код из СМС (шаг 2 — завершение входа).
+/// </remarks>
 public class KuperSessionRequest
 {
-    public string Cookie { get; set; } = string.Empty;
+    public string? Cookie { get; set; }
+    public string? Phone { get; set; }
+    public string? Code { get; set; }
     public double Lat { get; set; } = 55.7558;
     public double Lon { get; set; } = 37.6173;
 }
