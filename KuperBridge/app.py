@@ -1,4 +1,4 @@
-"""kuper-bridge: HTTP-прокси к неофициальному API Купера через curl_cffi.
+﻿"""kuper-bridge: HTTP-прокси к неофициальному API Купера через curl_cffi.
 
 Вход в аккаунт — по cookie из авторизованного браузера web.kuper.ru.
 Cookie хранится только в файле состояния (внутренний том) и не логируется.
@@ -45,7 +45,7 @@ STORES_MAX_PAGES = 3
 STORES_OFFSET = 0.045  # ~5 км
 STORES_MAX_WORKERS = 9
 
-app = FastAPI(title="kuper-bridge", version="0.4.1")
+app = FastAPI(title="kuper-bridge", version="0.4.2")
 
 
 def _patch_order_parsing() -> None:
@@ -141,6 +141,9 @@ class Session:
         self.lat = lat
         self.lon = lon
         self.active_store_id = data.get("active_store_id")
+        stores = data.get("stores")
+        if isinstance(stores, list):
+            self.stores = [s for s in stores if isinstance(s, dict) and s.get("store_id")]
         # историю подтягиваем по требованию (/history/refresh или /resolve)
 
     def save(self) -> None:
@@ -151,6 +154,7 @@ class Session:
                 "lat": self.lat,
                 "lon": self.lon,
                 "active_store_id": self.active_store_id,
+                "stores": self.stores,
                 "saved_at": time.time(),
             }
         try:
