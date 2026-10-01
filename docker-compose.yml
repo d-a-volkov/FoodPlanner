@@ -11,6 +11,7 @@ services:
       DataPath: /data
       FrontendPath: /app/webdist
       Kuper__BridgeUrl: http://kuper-bridge:8082
+      Kuper__DataPath: /data
     volumes:
       - foodplanner_data:/data
     networks:
