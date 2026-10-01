@@ -64,8 +64,6 @@ export const shoppingListsApi = {
 export const kuperApi = {
   status: () => api.get('/kuper/status'),
   getSession: () => api.get('/kuper/session'),
-  sendCode: (phone, lat = 55.7558, lon = 37.6173) => api.post('/kuper/session', { phone, lat, lon }),
-  confirmCode: (phone, code, lat = 55.7558, lon = 37.6173) => api.post('/kuper/session', { phone, code, lat, lon }),
   connectCookie: (cookie, lat = 55.7558, lon = 37.6173) => api.post('/kuper/session', { cookie, lat, lon }),
   selectStore: (storeId) => api.post('/kuper/session/store', { storeId }),
   refreshHistory: () => api.post('/kuper/history/refresh'),

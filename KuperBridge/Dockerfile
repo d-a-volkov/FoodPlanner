@@ -1,16 +1,15 @@
-FROM mcr.microsoft.com/playwright/python:v1.49.0-jammy
+FROM python:3.11-slim
 
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     KUPER_STATE=/data/kuper_state.json \
-    KUPER_IMPERSONATE=chrome131 \
-    KUPER_HEADLESS=1
+    KUPER_IMPERSONATE=chrome131
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py browser_auth.py matcher.py ./
+COPY app.py matcher.py ./
 
 EXPOSE 8082
 

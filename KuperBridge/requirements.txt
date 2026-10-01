@@ -2,6 +2,3 @@ kuper-api==0.1.0
 curl-cffi==0.16.3
 fastapi==0.142.2
 uvicorn[standard]==0.54.0
-# Версия пакета должна совпадать с образом mcr.microsoft.com/playwright/python:v1.49.0
-# (в образе уже лежат браузеры ревизии 1148; пакет их не переустанавливает).
-playwright==1.49.0

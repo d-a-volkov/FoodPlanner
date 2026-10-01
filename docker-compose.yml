@@ -21,13 +21,12 @@ services:
       - kuper-bridge
 
   kuper-bridge:
-    image: kuper-bridge:0.2.0
+    image: kuper-bridge:0.3.0
     build:
       context: ./KuperBridge
       dockerfile: Dockerfile
     environment:
       KUPER_STATE: /data/kuper_state.json
-      KUPER_HEADLESS: "1"
     volumes:
       - foodplanner_data:/data
     networks:
