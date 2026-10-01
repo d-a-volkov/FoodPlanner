@@ -170,7 +170,7 @@ def _serialize_store(store) -> dict:
 
 def _require_session() -> Client:
     if not _state.client:
-        raise HTTPException(409, "Сессия не настроена: войдите в Купер по телефону.")
+        raise HTTPException(409, "Сессия не настроена: вставьте cookie из браузера Купера.")
     return _state.client
 
 
@@ -182,7 +182,7 @@ def _require_store() -> int:
 
 def _map_error(exc: Exception) -> HTTPException:
     if isinstance(exc, Unauthorized):
-        return HTTPException(401, "Сессия не авторизована. Войдите в Купер заново по телефону.")
+        return HTTPException(401, "Сессия не авторизована. Вставьте свежую cookie из браузера Купера.")
     if isinstance(exc, AntiBotChallenge):
         return HTTPException(423, "Kuper заблокировал IP анти-ботом (VPN/дата-центр). Нужен чистый IP.")
     if isinstance(exc, (NotFound, BadRequest, UnprocessableEntity)):
