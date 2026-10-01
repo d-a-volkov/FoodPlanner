@@ -21,7 +21,7 @@ services:
       - kuper-bridge
 
   kuper-bridge:
-    image: kuper-bridge:0.3.0
+    image: kuper-bridge:0.4.0
     build:
       context: ./KuperBridge
       dockerfile: Dockerfile

@@ -22,6 +22,9 @@ public class KuperStoresRequest
 {
     public double Lat { get; set; }
     public double Lon { get; set; }
+
+    /// <summary>Обходить соседние точки: находит магазины вне зоны доставки центра.</summary>
+    public bool Wide { get; set; } = true;
 }
 
 /// <summary>Пункт списка покупок для подбора в Купере.</summary>

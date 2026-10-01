@@ -32,13 +32,20 @@ from kuper_api.order.order import Order
 
 import matcher
 
+from concurrent.futures import ThreadPoolExecutor
+
 STATE_FILE = os.environ.get("KUPER_STATE", "./kuper_state.json")
 IMPERSONATE = os.environ.get("KUPER_IMPERSONATE", "chrome131")
 DEFAULT_LAT = 55.7558
 DEFAULT_LON = 37.6173
+# /api/v2/stores отдаёт магазины только в зоне доставки точки, поэтому
+# одного центра города недостаточно: обходим соседние точки и объединяем.
 STORES_PER_PAGE = 100
+STORES_MAX_PAGES = 3
+STORES_OFFSET = 0.045  # ~5 км
+STORES_MAX_WORKERS = 9
 
-app = FastAPI(title="kuper-bridge", version="0.3.0")
+app = FastAPI(title="kuper-bridge", version="0.4.0")
 
 
 class SessionSetup(BaseModel):
@@ -75,6 +82,7 @@ class StoresRequest(BaseModel):
 
     lat: float = DEFAULT_LAT
     lon: float = DEFAULT_LON
+    wide: bool = True
 
 
 class Session:
@@ -198,6 +206,52 @@ def _serialize_store(store) -> dict:
     }
 
 
+def _probe_points(lat: float, lon: float, wide: bool) -> List[tuple]:
+    """Точки для обхода: сам город + 8 соседних (если wide)."""
+    points = [(lat, lon, STORES_MAX_PAGES)]
+    if not wide:
+        return points
+    for dlat in (-STORES_OFFSET, 0.0, STORES_OFFSET):
+        for dlon in (-STORES_OFFSET, 0.0, STORES_OFFSET):
+            if dlat or dlon:
+                points.append((lat + dlat, lon + dlon, 1))
+    return points
+
+
+def _stores_at(client: Client, lat: float, lon: float, pages: int) -> List[dict]:
+    out: List[dict] = []
+    for page in range(1, pages + 1):
+        try:
+            res = client.stores(lat, lon, per_page=STORES_PER_PAGE, page=page)
+        except KuperError:
+            break
+        except Exception:
+            break
+        if not res:
+            break
+        out.extend(_serialize_store(s) for s in res)
+        if len(res) < STORES_PER_PAGE:
+            break
+    return out
+
+
+def fetch_stores(client: Client, lat: float, lon: float, wide: bool = True) -> List[dict]:
+    """Объединяет магазины из зон доставки нескольких точек."""
+    points = _probe_points(lat, lon, wide)
+
+    def work(point: tuple) -> List[dict]:
+        return _stores_at(client, point[0], point[1], point[2])
+
+    found: Dict[int, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(STORES_MAX_WORKERS, len(points))) as pool:
+        for batch in pool.map(work, points):
+            for store in batch:
+                sid = store.get("store_id")
+                if sid and sid not in found:
+                    found[sid] = store
+    return sorted(found.values(), key=lambda s: (s.get("name") or "").lower())
+
+
 def _require_session() -> Client:
     if not _state.client:
         raise HTTPException(409, "Сессия не настроена: вставьте cookie из браузера Купера.")
@@ -285,7 +339,7 @@ def _finalize_session(cookie: str, lat: float, lon: float) -> dict:
         raise _map_error(exc)
     if not profile:
         raise HTTPException(401, "Не удалось получить профиль: сессия не авторизована.")
-    stores = client.stores(lat, lon, per_page=STORES_PER_PAGE)
+    stores = fetch_stores(client, lat, lon, wide=True)
     _state.client = client
     pdata = profile.to_dict()
     _state.profile = {
@@ -296,7 +350,7 @@ def _finalize_session(cookie: str, lat: float, lon: float) -> dict:
     }
     _state.lat = lat
     _state.lon = lon
-    _state.stores = [_serialize_store(s) for s in stores]
+    _state.stores = stores
     _state.save()
     try:
         _refresh_history(client)
@@ -342,10 +396,10 @@ def select_store(payload: StoreSelect):
         # разрешаем выбор из свежего списка магазинов по сохранённым координатам
         client = _state.client
         try:
-            stores = client.stores(_state.lat, _state.lon, per_page=STORES_PER_PAGE)
-            _state.stores = [_serialize_store(s) for s in stores]
+            stores = fetch_stores(client, _state.lat, _state.lon, wide=True)
         except KuperError as exc:
             raise _map_error(exc)
+        _state.stores = stores
         if not any(s["store_id"] == payload.store_id for s in _state.stores):
             raise HTTPException(400, "Магазин не найден в выдаче.")
     _state.active_store_id = payload.store_id
@@ -360,10 +414,10 @@ def refresh_stores(payload: StoresRequest):
     _state.lat = payload.lat
     _state.lon = payload.lon
     try:
-        stores = client.stores(payload.lat, payload.lon, per_page=STORES_PER_PAGE)
+        stores = fetch_stores(client, payload.lat, payload.lon, wide=payload.wide)
     except KuperError as exc:
         raise _map_error(exc)
-    _state.stores = [_serialize_store(s) for s in stores]
+    _state.stores = stores
     if _state.active_store_id and not any(
         s["store_id"] == _state.active_store_id for s in _state.stores
     ):

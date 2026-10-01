@@ -63,7 +63,7 @@ public class KuperService : IKuperService
 
     public async Task<string> RefreshStoresAsync(KuperStoresRequest request)
     {
-        var body = await SendAsync(HttpMethod.Post, "/stores", new { lat = request.Lat, lon = request.Lon });
+        var body = await SendAsync(HttpMethod.Post, "/stores", new { lat = request.Lat, lon = request.Lon, wide = request.Wide });
         var config = GetLocalConfig() ?? new KuperConfig();
         config.Lat = request.Lat;
         config.Lon = request.Lon;

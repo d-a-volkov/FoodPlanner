@@ -77,12 +77,12 @@ export const useKuperStore = defineStore('kuper', () => {
     return city
   }
 
-  async function refreshStores(lat, lon) {
+  async function refreshStores(lat, lon, wide = true) {
     error.value = ''
     loading.value = true
     try {
       const coords = lat != null && lon != null ? { lat, lon } : coordinates.value
-      const { data } = await kuperApi.refreshStores(coords.lat, coords.lon)
+      const { data } = await kuperApi.refreshStores(coords.lat, coords.lon, wide)
       stores.value = data.stores || []
       selectedStoreId.value = data.store_id || null
       coordinates.value = { lat: data.lat ?? coords.lat, lon: data.lon ?? coords.lon }

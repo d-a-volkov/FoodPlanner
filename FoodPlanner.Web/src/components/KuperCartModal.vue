@@ -17,6 +17,7 @@ const spscCookie = ref('')
 const cityName = ref(store.selectedCity || DEFAULT_CITY.name)
 const citySearch = ref('')
 const storeFilter = ref('')
+const wideSearch = ref(true)
 const storesLoading = ref(false)
 const resolving = ref(false)
 const adding = ref(false)
@@ -131,7 +132,7 @@ async function loadStores() {
   storesLoading.value = true
   try {
     const city = store.setCity(cityName.value) || DEFAULT_CITY
-    await store.refreshStores(city.lat, city.lon)
+    await store.refreshStores(city.lat, city.lon, wideSearch.value)
     if (!store.stores.length) {
       error.value = `Купер не нашёл магазинов в городе ${city.name}. Выберите другой город.`
     }
@@ -305,8 +306,13 @@ async function resetSession() {
             <option v-for="c in cityMatches" :key="c.name" :value="c.name">{{ c.name }}</option>
           </select>
 
+          <label class="kup-check">
+            <input v-model="wideSearch" type="checkbox" />
+            Искать в окрестностях (находит магазины вне зоны доставки центра, ~10 сек)
+          </label>
+
           <button class="kup-btn kup-small" :disabled="storesLoading" @click="loadStores">
-            {{ storesLoading ? 'Загружаем…' : `🔄 Магазины: ${activeCityName}` }}
+            {{ storesLoading ? 'Ищем магазины…' : `🔄 Магазины: ${activeCityName}` }}
           </button>
 
           <label class="kup-select-label" v-if="store.stores.length">
@@ -560,7 +566,16 @@ async function resetSession() {
   word-break: break-all;
 }
 .kup-select-label { display: block; margin-bottom: 12px; }
-    .kup-stores {
+    .kup-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: #555;
+    margin-bottom: 10px;
+    font-weight: 400;
+  }
+  .kup-stores {
       max-height: 300px;
       overflow-y: auto;
       border: 1px solid #e4e4e4;
