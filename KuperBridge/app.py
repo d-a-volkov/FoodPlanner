@@ -45,7 +45,32 @@ STORES_MAX_PAGES = 3
 STORES_OFFSET = 0.045  # ~5 км
 STORES_MAX_WORKERS = 9
 
-app = FastAPI(title="kuper-bridge", version="0.4.0")
+app = FastAPI(title="kuper-bridge", version="0.4.1")
+
+
+def _patch_order_parsing() -> None:
+    """Заказы с address=null роняют kuper_api (AttributeError) - пропускаем их.
+
+    История покупок нужна только для подсказок, поэтому битый заказ
+    не должен ломать подбор товаров.
+    """
+    original = Order.de_json
+
+    @classmethod
+    def safe_de_json(cls, data, client=None, **kwargs):  # type: ignore[no-untyped-def]
+        try:
+            if not isinstance(data, dict) or not data.get("id"):
+                return None
+            if not data.get("address"):
+                data = {**data, "address": {}}
+            return original(data, client)
+        except Exception:
+            return None
+
+    Order.de_json = safe_de_json  # type: ignore[assignment]
+
+
+_patch_order_parsing()
 
 
 class SessionSetup(BaseModel):
@@ -277,20 +302,26 @@ def _map_error(exc: Exception) -> HTTPException:
 
 
 def _refresh_history(client: Client) -> None:
+    """История покупок — вспомогательные подсказки, ошибки не критичны."""
     try:
         orders: List[Order] = client.orders(previous=True)
-    except KuperError:
+    except Exception:
         return
     ids: set = set()
     names: Dict[int, str] = {}
-    for order in orders:
-        for shipment in order.shipments or []:
-            for item in shipment.line_items or []:
+    for order in orders or []:
+        if order is None:
+            continue
+        for shipment in getattr(order, "shipments", None) or []:
+            for item in getattr(shipment, "line_items", None) or []:
                 oid = getattr(item, "offer_id", None)
                 nm = getattr(item, "name", "")
                 if oid:
-                    ids.add(int(oid))
-                    names[int(oid)] = nm
+                    try:
+                        ids.add(int(oid))
+                        names[int(oid)] = nm
+                    except (TypeError, ValueError):
+                        continue
     _state.history_ids = ids
     _state.history_names = names
     _state.history_refreshed_at = time.time()
@@ -434,10 +465,7 @@ def refresh_stores(payload: StoresRequest):
 @app.post("/history/refresh")
 def refresh_history():
     client = _require_session()
-    try:
-        _refresh_history(client)
-    except KuperError as exc:
-        raise _map_error(exc)
+    _refresh_history(client)
     return {"ok": True, "items": len(_state.history_ids), "names": list(_state.history_names.values())[:20]}
 
 
@@ -445,10 +473,7 @@ def refresh_history():
 def resolve_items(payload: ResolveRequest):
     client = _require_session()
     store_id = _require_store()
-    try:
-        _refresh_history(client)
-    except KuperError:
-        pass
+    _refresh_history(client)
 
     results = []
     for item in payload.items:
