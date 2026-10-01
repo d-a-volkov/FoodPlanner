@@ -1,6 +1,7 @@
-<script setup>
+﻿<script setup>
 import { ref, watch, computed } from 'vue'
 import { useKuperStore } from '../stores/kuper'
+import { KUPER_CITIES, DEFAULT_CITY } from '../constants/kuperCities'
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -13,6 +14,9 @@ const store = useKuperStore()
 const step = ref('connect') // connect | store | resolve | result
 const sessionCookie = ref('')
 const spscCookie = ref('')
+const cityName = ref(store.selectedCity || DEFAULT_CITY.name)
+const citySearch = ref('')
+const storeFilter = ref('')
 const storesLoading = ref(false)
 const resolving = ref(false)
 const adding = ref(false)
@@ -26,6 +30,34 @@ const storeSelected = computed(() => !!store.selectedStoreId)
 const pendingRows = computed(() => rows.value.filter(r => r.included && r.chosen))
 const addedCount = computed(() => result.value?.added?.length || 0)
 const failedCount = computed(() => result.value?.failed?.length || 0)
+
+const cityMatches = computed(() => {
+  const q = citySearch.value.trim().toLowerCase()
+  if (!q) return KUPER_CITIES
+  return KUPER_CITIES.filter(c => c.name.toLowerCase().includes(q))
+})
+
+const filteredStores = computed(() => {
+  const q = storeFilter.value.trim().toLowerCase()
+  const list = q
+    ? store.stores.filter(s => [s.name, s.retailer_name, s.address, s.city]
+        .some(v => (v || '').toLowerCase().includes(q)))
+    : store.stores
+  return [...list].sort((a, b) => {
+    if (a.store_id === store.selectedStoreId) return -1
+    if (b.store_id === store.selectedStoreId) return 1
+    return (a.name || '').localeCompare(b.name || '', 'ru')
+  })
+})
+
+const activeCityName = computed(() => {
+  const sel = store.coordinates
+  if (sel?.lat && sel?.lon) {
+    const exact = KUPER_CITIES.find(c => Math.abs(c.lat - sel.lat) < 0.0001 && Math.abs(c.lon - sel.lon) < 0.0001)
+    return exact?.name || 'Произвольная точка'
+  }
+  return cityName.value
+})
 
 watch(() => props.show, async (v) => {
   if (!v) return
@@ -63,7 +95,8 @@ async function connectByCookie() {
   const cookie = spsc ? `_Instamart_session=${sess}; spsc=${spsc}` : `_Instamart_session=${sess}`
   storesLoading.value = true
   try {
-    await store.connectByCookie(cookie)
+    const city = store.setCity(cityName.value)
+    await store.connectByCookie(cookie, city?.lat, city?.lon)
     sessionCookie.value = ''
     spscCookie.value = ''
     step.value = storeSelected.value ? 'resolve' : 'store'
@@ -90,6 +123,22 @@ async function selectStoreAndResolve() {
     await resolveItems()
   } catch (e) {
     error.value = friendly(e)
+  }
+}
+
+async function loadStores() {
+  error.value = ''
+  storesLoading.value = true
+  try {
+    const city = store.setCity(cityName.value) || DEFAULT_CITY
+    await store.refreshStores(city.lat, city.lon)
+    if (!store.stores.length) {
+      error.value = `Купер не нашёл магазинов в городе ${city.name}. Выберите другой город.`
+    }
+  } catch (e) {
+    error.value = friendly(e)
+  } finally {
+    storesLoading.value = false
   }
 }
 
@@ -242,15 +291,55 @@ async function resetSession() {
 
         <!-- Шаг: магазин -->
         <div v-else-if="step === 'store'" class="kup-body">
-          <p class="kup-hint">Выберите магазин доставки для подбора товаров:</p>
+          <p class="kup-hint">
+            Магазины ищутся рядом с выбранным городом. Смените город и обновите список,
+            если нужного магазина нет.
+          </p>
+
           <label class="kup-select-label">
-            <select v-model="store.selectedStoreId" class="kup-select">
-              <option disabled value="">— выберите магазин —</option>
-              <option v-for="s in store.stores" :key="s.store_id" :value="s.store_id">
-                {{ s.name }}{{ s.retailer_name ? ' — ' + s.retailer_name : '' }}
-              </option>
-            </select>
+            Город
+            <input v-model="citySearch" class="kup-input" placeholder="Поиск города" />
           </label>
+
+          <select v-model="cityName" class="kup-select" size="1">
+            <option v-for="c in cityMatches" :key="c.name" :value="c.name">{{ c.name }}</option>
+          </select>
+
+          <button class="kup-btn kup-small" :disabled="storesLoading" @click="loadStores">
+            {{ storesLoading ? 'Загружаем…' : `🔄 Магазины: ${activeCityName}` }}
+          </button>
+
+          <label class="kup-select-label" v-if="store.stores.length">
+            Фильтр магазинов
+            <input v-model="storeFilter" class="kup-input" placeholder="Название, сеть или адрес" />
+          </label>
+
+          <p class="kup-hint" v-if="store.stores.length">
+            Найдено магазинов: {{ filteredStores.length }} из {{ store.stores.length }}
+          </p>
+
+          <div class="kup-stores">
+            <label
+              v-for="s in filteredStores"
+              :key="s.store_id"
+              class="kup-store"
+              :class="{ active: s.store_id === store.selectedStoreId }"
+            >
+              <input type="radio" :value="s.store_id" v-model="store.selectedStoreId" name="kuper-store" />
+              <span class="kup-store-body">
+                <span class="kup-store-name">{{ s.name }}</span>
+                <span class="kup-store-meta" v-if="s.retailer_name">{{ s.retailer_name }}</span>
+                <span class="kup-store-meta" v-if="s.address || s.city">{{ [s.city, s.address].filter(Boolean).join(', ') }}</span>
+                <span class="kup-store-meta" v-if="s.delivery_min">
+                  доставка {{ s.delivery_min }}{{ s.delivery_max ? '–' + s.delivery_max : '' }} мин
+                </span>
+              </span>
+            </label>
+            <p class="kup-hint" v-if="!filteredStores.length">
+              Ничего не найдено. Измените фильтр или город.
+            </p>
+          </div>
+
           <button class="kup-btn kup-primary" :disabled="!store.selectedStoreId" @click="selectStoreAndResolve">
             Выбрать магазин и подобрать товары
           </button>
@@ -416,7 +505,16 @@ async function resetSession() {
   resize: vertical;
   font-family: monospace;
 }
-.kup-btn {
+.kup-input {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 9px 10px;
+    font-size: 0.88rem;
+    font-family: inherit;
+    margin-top: 4px;
+  }
+  .kup-btn {
   padding: 9px 16px;
   border: 1px solid #ddd;
   border-radius: 8px;
@@ -462,6 +560,29 @@ async function resetSession() {
   word-break: break-all;
 }
 .kup-select-label { display: block; margin-bottom: 12px; }
+    .kup-stores {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #e4e4e4;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    .kup-store {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 9px 11px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      margin: 0;
+      font-weight: 400;
+    }
+    .kup-store:last-child { border-bottom: none; }
+    .kup-store:hover { background: #fafafa; }
+    .kup-store.active { background: #eef7ff; box-shadow: inset 3px 0 0 #1976d2; }
+    .kup-store-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .kup-store-name { font-size: 0.88rem; font-weight: 600; color: #222; }
+    .kup-store-meta { font-size: 0.76rem; color: #767676; }
     .kup-req {
       font-size: 0.72rem;
       font-weight: 600;

@@ -17,6 +17,13 @@ public class KuperStoreSelectionRequest
     public int StoreId { get; set; }
 }
 
+/// <summary>Запрос списка магазинов в городе (по координатам).</summary>
+public class KuperStoresRequest
+{
+    public double Lat { get; set; }
+    public double Lon { get; set; }
+}
+
 /// <summary>Пункт списка покупок для подбора в Купере.</summary>
 public class KuperResolveItem
 {

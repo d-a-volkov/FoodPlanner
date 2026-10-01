@@ -36,6 +36,7 @@ STATE_FILE = os.environ.get("KUPER_STATE", "./kuper_state.json")
 IMPERSONATE = os.environ.get("KUPER_IMPERSONATE", "chrome131")
 DEFAULT_LAT = 55.7558
 DEFAULT_LON = 37.6173
+STORES_PER_PAGE = 100
 
 app = FastAPI(title="kuper-bridge", version="0.3.0")
 
@@ -69,6 +70,13 @@ class CartRequest(BaseModel):
     items: List[CartItem] = Field(..., min_items=1, max_items=200)
 
 
+class StoresRequest(BaseModel):
+    """Запрос списка магазинов в точке или городе."""
+
+    lat: float = DEFAULT_LAT
+    lon: float = DEFAULT_LON
+
+
 class Session:
     """Состояние сессии Купера."""
 
@@ -77,6 +85,8 @@ class Session:
         self.profile: dict = {}
         self.stores: List[dict] = []
         self.active_store_id: Optional[int] = None
+        self.lat: float = DEFAULT_LAT
+        self.lon: float = DEFAULT_LON
         self.history_ids: set = set()
         self.history_names: Dict[int, str] = {}
         self.history_refreshed_at: Optional[float] = None
@@ -95,6 +105,8 @@ class Session:
         self.client = Client(cookie=cookie, impersonate=IMPERSONATE)
         lat = data.get("lat", DEFAULT_LAT)
         lon = data.get("lon", DEFAULT_LON)
+        self.lat = lat
+        self.lon = lon
         self.active_store_id = data.get("active_store_id")
         # историю подтягиваем по требованию (/history/refresh или /resolve)
 
@@ -103,8 +115,8 @@ class Session:
             cookie = self._cookie_storage
             payload = {
                 "cookie": cookie,
-                "lat": DEFAULT_LAT,
-                "lon": DEFAULT_LON,
+                "lat": self.lat,
+                "lon": self.lon,
                 "active_store_id": self.active_store_id,
                 "saved_at": time.time(),
             }
@@ -157,11 +169,29 @@ def _serialize_store(store) -> dict:
     data = store.to_dict()
     retailer = data.get("retailer") or {}
     location = data.get("location") or {}
+    if not isinstance(retailer, dict):
+        retailer = getattr(retailer, "__dict__", {}) or {}
+    if not isinstance(location, dict):
+        location = getattr(location, "__dict__", {}) or {}
+    address = data.get("address") or location.get("address") or {}
+    if not isinstance(address, dict):
+        address = getattr(address, "__dict__", {}) or {}
+    address_text = (
+        data.get("address_name")
+        or address.get("name")
+        or address.get("full_name")
+        or ""
+    )
+    city = data.get("city") or location.get("city") or address.get("city") or ""
     return {
         "store_id": int(data.get("id", 0)),
         "name": data.get("name", ""),
-        "retailer_slug": retailer.get("slug") if isinstance(retailer, dict) else getattr(retailer, "slug", None),
-        "retailer_name": retailer.get("name") if isinstance(retailer, dict) else getattr(retailer, "name", None),
+        "retailer_slug": retailer.get("slug"),
+        "retailer_name": retailer.get("name"),
+        "address": address_text,
+        "city": city if isinstance(city, str) else str(city),
+        "lat": location.get("lat") or location.get("latitude"),
+        "lon": location.get("lon") or location.get("longitude"),
         "min_order_amount": data.get("min_order_amount"),
         "delivery_min": data.get("estimate_minutes_min"),
         "delivery_max": data.get("estimate_minutes_max"),
@@ -230,6 +260,9 @@ def health():
             "profile": bool(_state.profile),
             "store_selected": bool(_state.active_store_id),
             "store_id": _state.active_store_id,
+            "stores_count": len(_state.stores),
+            "lat": _state.lat,
+            "lon": _state.lon,
             "history_items": len(_state.history_ids),
             "history_refreshed_at": _state.history_refreshed_at,
         },
@@ -252,7 +285,7 @@ def _finalize_session(cookie: str, lat: float, lon: float) -> dict:
         raise _map_error(exc)
     if not profile:
         raise HTTPException(401, "Не удалось получить профиль: сессия не авторизована.")
-    stores = client.stores(lat, lon, per_page=50)
+    stores = client.stores(lat, lon, per_page=STORES_PER_PAGE)
     _state.client = client
     pdata = profile.to_dict()
     _state.profile = {
@@ -261,6 +294,8 @@ def _finalize_session(cookie: str, lat: float, lon: float) -> dict:
         "phone": str(pdata.get("phone", "") or ""),
         "email": pdata.get("email") or "",
     }
+    _state.lat = lat
+    _state.lon = lon
     _state.stores = [_serialize_store(s) for s in stores]
     _state.save()
     try:
@@ -279,6 +314,8 @@ def get_session():
         "profile": _state.profile,
         "stores": _state.stores,
         "store_id": _state.active_store_id,
+        "lat": _state.lat,
+        "lon": _state.lon,
     }
 
 
@@ -302,10 +339,10 @@ def delete_session():
 def select_store(payload: StoreSelect):
     _require_session()
     if not any(s["store_id"] == payload.store_id for s in _state.stores):
-        # разрешаем выбор из свежего списка магазинов
+        # разрешаем выбор из свежего списка магазинов по сохранённым координатам
         client = _state.client
         try:
-            stores = client.stores(DEFAULT_LAT, DEFAULT_LON, per_page=50)
+            stores = client.stores(_state.lat, _state.lon, per_page=STORES_PER_PAGE)
             _state.stores = [_serialize_store(s) for s in stores]
         except KuperError as exc:
             raise _map_error(exc)
@@ -314,6 +351,30 @@ def select_store(payload: StoreSelect):
     _state.active_store_id = payload.store_id
     _state.save()
     return {"ok": True, "store_id": payload.store_id}
+
+
+@app.post("/stores")
+def refresh_stores(payload: StoresRequest):
+    """Перезагрузить список магазинов в другой точке/городе."""
+    client = _require_session()
+    _state.lat = payload.lat
+    _state.lon = payload.lon
+    try:
+        stores = client.stores(payload.lat, payload.lon, per_page=STORES_PER_PAGE)
+    except KuperError as exc:
+        raise _map_error(exc)
+    _state.stores = [_serialize_store(s) for s in stores]
+    if _state.active_store_id and not any(
+        s["store_id"] == _state.active_store_id for s in _state.stores
+    ):
+        _state.active_store_id = None
+    _state.save()
+    return {
+        "stores": _state.stores,
+        "store_id": _state.active_store_id,
+        "lat": _state.lat,
+        "lon": _state.lon,
+    }
 
 
 @app.post("/history/refresh")

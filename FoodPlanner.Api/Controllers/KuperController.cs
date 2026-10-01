@@ -38,6 +38,10 @@ public class KuperController : ControllerBase
     public async Task<IActionResult> SelectStore([FromBody] KuperStoreSelectionRequest request)
         => await Proxy(() => _kuper.SelectStoreAsync(request.StoreId));
 
+    [HttpPost("stores")]
+    public async Task<IActionResult> RefreshStores([FromBody] KuperStoresRequest request)
+        => await Proxy(() => _kuper.RefreshStoresAsync(request));
+
     [HttpPost("history/refresh")]
     public async Task<IActionResult> RefreshHistory()
         => await Proxy(() => _kuper.RefreshHistoryAsync());

@@ -61,6 +61,21 @@ public class KuperService : IKuperService
         return body;
     }
 
+    public async Task<string> RefreshStoresAsync(KuperStoresRequest request)
+    {
+        var body = await SendAsync(HttpMethod.Post, "/stores", new { lat = request.Lat, lon = request.Lon });
+        var config = GetLocalConfig() ?? new KuperConfig();
+        config.Lat = request.Lat;
+        config.Lon = request.Lon;
+        using var doc = JsonDocument.Parse(body);
+        config.StoreId = doc.RootElement.TryGetProperty("store_id", out var id)
+                         && id.ValueKind == JsonValueKind.Number
+            ? id.GetInt32()
+            : null;
+        await SaveConfigAsync(config);
+        return body;
+    }
+
     public Task<string> RefreshHistoryAsync() => SendAsync(HttpMethod.Post, "/history/refresh", new { });
 
     public Task<string> ResolveAsync(KuperResolveRequest request)
