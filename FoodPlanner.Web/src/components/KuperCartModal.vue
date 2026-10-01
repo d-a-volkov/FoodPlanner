@@ -11,7 +11,8 @@ const emit = defineEmits(['close'])
 const store = useKuperStore()
 
 const step = ref('connect') // connect | store | resolve | result
-const cookie = ref('')
+const sessionCookie = ref('')
+const spscCookie = ref('')
 const storesLoading = ref(false)
 const resolving = ref(false)
 const adding = ref(false)
@@ -31,7 +32,8 @@ watch(() => props.show, async (v) => {
   error.value = ''
   rows.value = []
   result.value = null
-  cookie.value = ''
+  sessionCookie.value = ''
+  spscCookie.value = ''
   try {
     await store.fetchStatus()
     await store.fetchSession()
@@ -52,14 +54,18 @@ function friendly(e) {
 
 async function connectByCookie() {
   error.value = ''
-  if (!cookie.value.trim()) {
-    error.value = 'Вставьте cookie из авторизованного браузера Купера'
+  const sess = sessionCookie.value.trim()
+  if (!sess) {
+    error.value = 'Вставьте значение _Instamart_session'
     return
   }
+  const spsc = spscCookie.value.trim()
+  const cookie = spsc ? `_Instamart_session=${sess}; spsc=${spsc}` : `_Instamart_session=${sess}`
   storesLoading.value = true
   try {
-    await store.connectByCookie(cookie.value.trim())
-    cookie.value = ''
+    await store.connectByCookie(cookie)
+    sessionCookie.value = ''
+    spscCookie.value = ''
     step.value = storeSelected.value ? 'resolve' : 'store'
   } catch (e) {
     error.value = friendly(e)
@@ -190,18 +196,40 @@ async function resetSession() {
           <p class="kup-hint">
             Авторизуйтесь на
             <a href="https://web.kuper.ru" target="_blank" rel="noopener">web.kuper.ru</a>
-            в своём обычном браузере, затем скопируйте строку
-            <code>_Instamart_session=...; spsc=...</code>
-            (DevTools → Application → Cookies → Instamart) и вставьте ниже.
-            Cookie хранится только на вашем сервере.
+            в своём обычном браузере. Затем F12 → Application → Cookies →
+            <code>https://web.kuper.ru</code> и скопируйте <b>значение</b> (не имя) двух строк
+            в поля ниже. Cookie хранится только на вашем сервере.
           </p>
-          <textarea
-            v-model="cookie"
-            class="kup-cookie"
-            rows="4"
-            placeholder="_Instamart_session=...; spsc=..."
-          ></textarea>
-          <button class="kup-btn kup-primary" :disabled="storesLoading" @click="connectByCookie">
+
+          <label class="kup-select-label">
+            _Instamart_session <span class="kup-req">обязательно</span>
+            <textarea
+              v-model="sessionCookie"
+              class="kup-cookie"
+              rows="3"
+              placeholder="значение cookie _Instamart_session"
+              spellcheck="false"
+              autocomplete="off"
+            ></textarea>
+          </label>
+
+          <label class="kup-select-label">
+            spsc <span class="kup-req kup-req-optional">желательно</span>
+            <textarea
+              v-model="spscCookie"
+              class="kup-cookie"
+              rows="2"
+              placeholder="значение cookie spsc"
+              spellcheck="false"
+              autocomplete="off"
+            ></textarea>
+          </label>
+
+          <button
+            class="kup-btn kup-primary"
+            :disabled="storesLoading || !sessionCookie.trim()"
+            @click="connectByCookie"
+          >
             {{ storesLoading ? 'Проверяем…' : 'Проверить и подключиться' }}
           </button>
 
@@ -433,7 +461,25 @@ async function resetSession() {
   background: #f2f2f2; padding: 1px 5px; border-radius: 4px; font-size: 0.75rem;
   word-break: break-all;
 }
-.kup-select-label { display: block; }
+.kup-select-label { display: block; margin-bottom: 12px; }
+    .kup-req {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #b3382c;
+      background: #fdecea;
+      border: 1px solid #f5c6c0;
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin-left: 6px;
+      vertical-align: middle;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .kup-req-optional {
+      color: #8a6d1f;
+      background: #fdf6e3;
+      border-color: #f0e0b0;
+    }
 .kup-select {
   width: 100%;
   padding: 9px;
