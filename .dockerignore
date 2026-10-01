@@ -13,3 +13,6 @@
 Dockerfile*
 docker-compose.yml
 .env.example
+KuperBridge/.venv
+KuperBridge/__pycache__
+KuperBridge/kuper_state.json

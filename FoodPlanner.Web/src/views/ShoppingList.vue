@@ -2,10 +2,12 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useShoppingListsStore } from '../stores/shoppingLists'
 import { useProductsStore } from '../stores/products'
+import KuperCartModal from '../components/KuperCartModal.vue'
 
 const store = useShoppingListsStore()
 const productsStore = useProductsStore()
 const showDetail = ref(null)
+const showKuper = ref(false)
 
 const sortedItems = computed(() => {
   const items = showDetail.value?.items || []
@@ -330,7 +332,17 @@ function exportToTxt(list) {
       <div v-if="showDetail" class="list-detail">
         <div class="detail-top">
           <h2>{{ showDetail.name }}</h2>
-          <button class="btn btn-small" @click="exportToTxt(showDetail)">⬇ TXT</button>
+          <div class="detail-top-actions">
+            <button class="btn btn-small" @click="exportToTxt(showDetail)">⬇ TXT</button>
+            <button
+              class="btn btn-small btn-primary"
+              :disabled="!showDetail.items?.length"
+              title="Собрать корзину в интернет-магазине Купер"
+              @click="showKuper = true"
+            >
+              🛒 Купер
+            </button>
+          </div>
         </div>
         <div class="detail-date">Создан: {{ new Date(showDetail.createdDate).toLocaleDateString('ru-RU') }}</div>
 
@@ -370,6 +382,8 @@ function exportToTxt(list) {
         <p>Выберите список покупок слева</p>
       </div>
     </div>
+
+    <KuperCartModal :show="showKuper" :list="showDetail || { id: '' }" @close="showKuper = false" />
   </div>
 </template>
 
@@ -582,6 +596,7 @@ h2 { margin-top: 0; }
   gap: 10px;
 }
 .detail-top h2 { margin: 0; overflow-wrap: anywhere; }
+.detail-top-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 
 .detail-date { font-size: 0.85rem; color: #999; margin-bottom: 15px; }
 

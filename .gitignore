@@ -48,3 +48,16 @@ Desktop.ini
 
 # User secrets
 secrets.json
+
+# Python (kuper-bridge)
+__pycache__/
+*.py[cod]
+.venv/
+KuperBridge/.venv/
+KuperBridge/kuper_state.json
+
+# Kuper session metadata (non-secret, but machine-specific)
+FoodPlanner.Api/Data/kuper.json
+
+# Runtime data files regenerated automatically in the /data volume (VPS)
+FoodPlanner.Api/Data/categories.json

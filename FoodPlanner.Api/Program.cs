@@ -26,6 +26,17 @@ builder.Services.AddScoped<IHarvardPlateService, HarvardPlateService>();
 builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
 builder.Services.AddScoped<IExternalRecipeService, ExternalRecipeService>();
 
+builder.Services.Configure<KuperOptions>(builder.Configuration.GetSection(KuperOptions.SectionName));
+builder.Services.AddScoped<IKuperService, KuperService>();
+var kuperBridgeUrl = builder.Configuration.GetValue<string>($"Kuper:{nameof(KuperOptions.BridgeUrl)}")
+    ?? "http://localhost:8082";
+builder.Services.AddHttpClient("KuperBridge", client =>
+{
+    client.BaseAddress = new Uri(kuperBridgeUrl);
+    client.Timeout = TimeSpan.FromSeconds(
+        builder.Configuration.GetValue("Kuper:TimeoutSeconds", 240));
+});
+
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("ExternalRecipes", client =>
 {

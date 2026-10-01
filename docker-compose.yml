@@ -10,6 +10,22 @@ services:
       ASPNETCORE_URLS: http://+:8080
       DataPath: /data
       FrontendPath: /app/webdist
+      Kuper__BridgeUrl: http://kuper-bridge:8082
+    volumes:
+      - foodplanner_data:/data
+    networks:
+      - foodplanner-net
+    restart: unless-stopped
+    depends_on:
+      - kuper-bridge
+
+  kuper-bridge:
+    image: kuper-bridge:0.1.0
+    build:
+      context: ./KuperBridge
+      dockerfile: Dockerfile
+    environment:
+      KUPER_STATE: /data/kuper_state.json
     volumes:
       - foodplanner_data:/data
     networks:

@@ -1,0 +1,4 @@
+kuper-api==0.1.0
+curl-cffi==0.16.3
+fastapi==0.142.2
+uvicorn[standard]==0.54.0

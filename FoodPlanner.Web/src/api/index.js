@@ -61,4 +61,16 @@ export const shoppingListsApi = {
   deleteItem: (listId, itemId) => api.delete(`/shoppinglists/${listId}/items/${itemId}`)
 }
 
+export const kuperApi = {
+  status: () => api.get('/kuper/status'),
+  getSession: () => api.get('/kuper/session'),
+  connectSession: (cookie, lat = 55.7558, lon = 37.6173) => api.post('/kuper/session', { cookie, lat, lon }),
+  selectStore: (storeId) => api.post('/kuper/session/store', { storeId }),
+  refreshHistory: () => api.post('/kuper/history/refresh'),
+  resolve: (listId) => api.post('/kuper/resolve', { listId }),
+  addToCart: (items) => api.post('/kuper/cart', { items }),
+  getCart: () => api.get('/kuper/cart'),
+  disconnect: () => api.delete('/kuper/session')
+}
+
 export default api
