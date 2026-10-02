@@ -90,9 +90,14 @@ function friendly(e) {
   const data = e?.response?.data
   let msg = data?.error || data?.detail || data?.message
   if (typeof data === 'string' && data.trim()) msg = data.trim()
-  if (!msg && Array.isArray(data?.errors)) {
-    msg = Object.values(data.errors).flat().filter(Boolean).join('; ')
+  // Ошибки валидации ASP.NET: { errors: { поле: [текст, ...] } }
+  if (data?.errors) {
+    const parts = Object.entries(data.errors)
+      .flatMap(([field, list]) => (Array.isArray(list) ? list : [list]).map(t => `${field}: ${t}`))
+      .filter(Boolean)
+    if (parts.length) msg = parts.join('; ')
   }
+  if (!msg && status >= 500) msg = data?.title || 'Сервер вернул ошибку без описания'
   if (!msg) msg = e?.message
   if (!msg) msg = 'Пустой ответ сервера'
   const prefix = status ? `Ошибка ${status}. ` : ''

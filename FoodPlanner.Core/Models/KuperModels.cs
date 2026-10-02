@@ -45,7 +45,12 @@ public class KuperResolveRequest
 /// <summary>Товар для добавления в корзину Купера.</summary>
 public class KuperCartItem
 {
-    public int ProductId { get; set; }
+    /// <summary>
+    /// Идентификатор товара Купера. Не int: номера товаров длинные
+    /// (например, 30703909781) и не помещаются в Int32.
+    /// </summary>
+    public long ProductId { get; set; }
+
     public int Quantity { get; set; } = 1;
 }
 

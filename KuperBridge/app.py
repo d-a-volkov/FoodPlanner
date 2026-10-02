@@ -106,7 +106,9 @@ class ResolveRequest(BaseModel):
 
 
 class CartItem(BaseModel):
-    product_id: int
+    # Идентификаторы товаров Купера длинные (например, 30703909781),
+    # обычный Python int подходит; проверяем только положительность.
+    product_id: int = Field(..., gt=0)
     quantity: int = Field(1, ge=1, le=99)
 
 

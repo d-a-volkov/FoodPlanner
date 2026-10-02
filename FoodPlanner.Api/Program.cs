@@ -89,6 +89,25 @@ var frontendPath = builder.Configuration.GetValue<string>("FrontendPath")
 
 if (Directory.Exists(frontendPath))
 {
+    var provider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath);
+
+    // index.html нельзя кэшировать: иначе браузер продолжает открывать старую
+    // сборку и после деплоя. Файлы в /assets имеют хеш в имени и кэшируются.
+    static void ApplyCacheHeaders(HttpContext context)
+    {
+        var path = context.Request.Path.Value ?? string.Empty;
+        var headers = context.Response.Headers;
+        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/webfonts/", StringComparison.OrdinalIgnoreCase))
+        {
+            headers["Cache-Control"] = "public, max-age=31536000, immutable";
+            return;
+        }
+        headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        headers["Pragma"] = "no-cache";
+        headers["Expires"] = "0";
+    }
+
     app.UseDefaultFiles(new DefaultFilesOptions
     {
         DefaultFileNames = new List<string> { "index.html" },
@@ -97,12 +116,22 @@ if (Directory.Exists(frontendPath))
     app.UseStaticFiles(new StaticFileOptions
     {
         RequestPath = "",
-        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath)
+        FileProvider = provider,
+        OnPrepareResponse = ctx =>
+        {
+            ctx.Context.Response.Headers.ETag = default;
+            ApplyCacheHeaders(ctx.Context);
+        }
     });
 
     app.MapFallbackToFile("index.html", new StaticFileOptions
     {
-        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath)
+        FileProvider = provider,
+        OnPrepareResponse = ctx =>
+        {
+            ctx.Context.Response.Headers.ETag = default;
+            ApplyCacheHeaders(ctx.Context);
+        }
     });
 }
 
