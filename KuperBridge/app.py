@@ -164,6 +164,9 @@ class Session:
         self.lat = lat
         self.lon = lon
         self.active_store_id = data.get("active_store_id")
+        profile = data.get("profile")
+        if isinstance(profile, dict) and profile:
+            self.profile = profile
         stores = data.get("stores")
         if isinstance(stores, list):
             self.stores = [s for s in stores if isinstance(s, dict) and s.get("store_id")]
@@ -174,6 +177,7 @@ class Session:
             cookie = self._cookie_storage
             payload = {
                 "cookie": cookie,
+                "profile": self.profile,
                 "lat": self.lat,
                 "lon": self.lon,
                 "active_store_id": self.active_store_id,
@@ -387,6 +391,32 @@ def _refresh_history(client: Client) -> None:
 # -- API -------------------------------------------------------------------
 
 
+def _ensure_profile() -> dict:
+    """Профиль аккаунта; подтягиваем при первом обращении, если его нет в состоянии."""
+    if _state.profile:
+        return _state.profile
+    client = _require_session()
+    try:
+        profile = client.profile()
+    except Exception:
+        return {}
+    if not profile:
+        return {}
+    data = profile.to_dict()
+    _state.profile = {
+        "id": data.get("id"),
+        "fullname": data.get("fullname")
+        or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip(),
+        "phone": str(data.get("phone", "") or ""),
+        "email": data.get("email") or "",
+    }
+    try:
+        _state.save()
+    except Exception:
+        pass
+    return _state.profile
+
+
 @app.get("/health")
 def health():
     has_cookie = bool(getattr(_state, "client", None))
@@ -449,7 +479,7 @@ def get_session():
         return {"connected": False, "stores": [], "profile": None}
     return {
         "connected": True,
-        "profile": _state.profile,
+        "profile": _ensure_profile(),
         "stores": _state.stores,
         "store_id": _state.active_store_id,
         "lat": _state.lat,

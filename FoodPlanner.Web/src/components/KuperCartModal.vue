@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { ref, watch, computed } from 'vue'
 import { useKuperStore } from '../stores/kuper'
+import { kuperApi } from '../api'
 import { KUPER_CITIES, DEFAULT_CITY } from '../constants/kuperCities'
 
 const props = defineProps({
@@ -25,6 +26,35 @@ const historySynced = ref(false)
 const error = ref('')
 const rows = ref([])
 const result = ref(null)
+const cart = ref(null)
+const cartLoading = ref(false)
+const cartError = ref('')
+
+const accountName = computed(() => {
+  const p = store.profile
+  if (!p) return ''
+  return p.fullname || p.email || (p.phone ? `+${String(p.phone).slice(-4)}` : '')
+})
+
+function formatMoney(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n.toFixed(2).replace(/\.00$/, '') : '—'
+}
+
+// Корзина как её видит сервер: единственный источник правды, если сайт Купера
+// показывает пустую корзину из-за другой сессии в браузере.
+async function loadCart() {
+  cartLoading.value = true
+  cartError.value = ''
+  try {
+    const { data } = await kuperApi.getCart()
+    cart.value = data
+  } catch (e) {
+    cartError.value = friendly(e)
+  } finally {
+    cartLoading.value = false
+  }
+}
 
 const connected = computed(() => !!store.status?.session?.has_cookie || !!store.profile)
 const storeSelected = computed(() => !!store.selectedStoreId)
@@ -345,7 +375,8 @@ async function addToCart() {
       byProduct: new Map(rows.value.map(r => [r.chosen?.product_id, r.sourceName]))
     }
     step.value = 'result'
-    // Пользователь просил сразу видеть товары в корзине Купера.
+    await loadCart()
+    // Покупки открываются на сайте Купера в новой вкладке.
     if (result.value.added.length) {
       window.open(result.value.cartUrl, '_blank', 'noopener')
     }
@@ -613,7 +644,37 @@ async function resetSession() {
                 {{ result.byProduct?.get(f.product_id) || 'товар' }} (#{{ f.product_id }}): {{ f.error }}
               </span>
             </p>
+            <p v-if="accountName" class="kup-result-account">
+              Аккаунт Купера: <b>{{ accountName }}</b>
+            </p>
           </div>
+
+          <div class="kup-cartbox">
+            <div class="kup-cartbox-head">
+              <span>Корзина Купера, как её видит сервер</span>
+              <button class="kup-btn kup-small" :disabled="cartLoading" @click="loadCart">
+                {{ cartLoading ? 'Обновляем...' : 'Обновить' }}
+              </button>
+            </div>
+            <p v-if="cartError" class="kup-refine-error">{{ cartError }}</p>
+            <template v-else-if="cart">
+              <p class="kup-cartbox-meta">
+                Заказ <b>{{ cart.order_number || '—' }}</b> ·
+                позиций: <b>{{ cart.items?.length || 0 }}</b> ·
+                сумма: <b>{{ formatMoney(cart.total) }} ₽</b>
+              </p>
+              <p v-if="!(cart.items?.length)" class="kup-cartbox-empty">
+                Сервер видит пустую корзину — товары не добавились.
+              </p>
+              <ul v-else class="kup-cartbox-list">
+                <li v-for="i in (cart.items || []).slice(0, 30)" :key="`${i.product_id}-${i.quantity}`">
+                  {{ i.name }} <span class="kup-cartbox-qty">× {{ i.quantity }}</span>
+                </li>
+              </ul>
+            </template>
+            <p v-else class="kup-cartbox-empty">Корзина ещё не загружена.</p>
+          </div>
+
           <div class="kup-actions">
             <a class="kup-btn kup-primary kup-link" :href="result?.cartUrl || 'https://web.kuper.ru/cart'" target="_blank" rel="noopener">
               🛒 Открыть корзину на web.kuper.ru
@@ -621,6 +682,10 @@ async function resetSession() {
             <button class="kup-btn" @click="step = 'resolve'">Вернуться к подбору</button>
             <button class="kup-btn" @click="closeAndForget">Закрыть</button>
           </div>
+          <p class="kup-result-hint">
+            Если на web.kuper.ru корзина пуста — обновите страницу сайта Купера
+            (Ctrl+F5) и убедитесь, что в нём выполнен вход в тот же аккаунт.
+          </p>
         </div>
       </div>
     </div>
@@ -873,6 +938,23 @@ async function resetSession() {
 .kup-refine-row .kup-input { flex: 1; }
 .kup-refine-error { margin: 0; font-size: 0.8rem; color: #d32f2f; }
 .kup-refine-hint { margin: 0; font-size: 0.8rem; color: #555; }
+.kup-result-account { margin: 6px 0 0; font-size: 0.85rem; color: #555; }
+.kup-result-hint { margin: 0; font-size: 0.8rem; color: #777; }
+.kup-cartbox {
+  border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px;
+  background: #fafafa; display: flex; flex-direction: column; gap: 6px;
+}
+.kup-cartbox-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 0.85rem; font-weight: 600; color: #333;
+}
+.kup-cartbox-meta { margin: 0; font-size: 0.85rem; color: #555; }
+.kup-cartbox-empty { margin: 0; font-size: 0.85rem; color: #999; }
+.kup-cartbox-list {
+  margin: 0; padding-left: 18px; max-height: 180px; overflow-y: auto;
+  font-size: 0.82rem; color: #444;
+}
+.kup-cartbox-qty { color: #888; }
 .kup-alts { margin-top: 8px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 6px; }
 .kup-alts-details summary { cursor: pointer; color: #1976d2; }
 .kup-alt-item {
