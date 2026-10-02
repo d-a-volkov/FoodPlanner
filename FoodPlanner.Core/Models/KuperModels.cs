@@ -42,6 +42,13 @@ public class KuperResolveRequest
     public List<KuperResolveItem>? Items { get; set; }
 }
 
+/// <summary>Уточняющий поиск по одному товару: «кофе растворимый 250 г».</summary>
+public class KuperSearchRequest
+{
+    public string Query { get; set; } = string.Empty;
+    public int? StoreId { get; set; }
+}
+
 /// <summary>Товар для добавления в корзину Купера.</summary>
 public class KuperCartItem
 {

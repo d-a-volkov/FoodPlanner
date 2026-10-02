@@ -16,6 +16,7 @@ public interface IKuperService
     Task<string> RefreshStoresAsync(KuperStoresRequest request);
     Task<string> RefreshHistoryAsync();
     Task<string> ResolveAsync(KuperResolveRequest request);
+    Task<string> SearchAsync(KuperSearchRequest request);
     Task<string> AddToCartAsync(KuperCartRequest request);
     Task<string> GetCartAsync();
     Task ResetSessionAsync();

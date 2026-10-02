@@ -72,6 +72,15 @@ public class KuperController : ControllerBase
         return await Proxy(() => _kuper.ResolveAsync(new KuperResolveRequest { Items = items }));
     }
 
+    [HttpPost("search")]
+    public async Task<IActionResult> Search([FromBody] KuperSearchRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Query))
+            return BadRequest(new { error = "Введите уточняющий запрос" });
+
+        return await Proxy(() => _kuper.SearchAsync(request));
+    }
+
     [HttpPost("cart")]
     public async Task<IActionResult> AddToCart([FromBody] KuperCartRequest request)
         => await Proxy(() => _kuper.AddToCartAsync(request));

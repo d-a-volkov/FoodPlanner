@@ -50,8 +50,10 @@ PRODUCTS_PAGES = 2
 ALTERNATIVES_LIMIT = 10
 #: Страница корзины Купера, куда ведёт кнопка после добавления.
 KUPER_CART_URL = "https://web.kuper.ru/cart"
+#: Порог совпадения для уточняющего поиска по запросу пользователя.
+REFINE_MIN_OVERLAP = 0.01
 
-app = FastAPI(title="kuper-bridge", version="0.4.2")
+app = FastAPI(title="kuper-bridge", version="0.4.4")
 
 
 def _brief(exc: Exception) -> str:
@@ -114,6 +116,13 @@ class CartItem(BaseModel):
 
 class CartRequest(BaseModel):
     items: List[CartItem] = Field(..., min_items=1, max_items=200)
+
+
+class SearchRequest(BaseModel):
+    """Уточняющий поиск по одному товару."""
+
+    query: str = Field(..., min_length=1, max_length=120)
+    store_id: Optional[int] = None
 
 
 class StoresRequest(BaseModel):
@@ -513,6 +522,31 @@ def refresh_history():
     return {"ok": True, "items": len(_state.history_ids), "names": list(_state.history_names.values())[:20]}
 
 
+def _search_candidates(client, store_id: int, raw_query: str) -> List[dict]:
+    """Кандидаты из каталога магазина по произвольному запросу.
+
+    Выдача сортируется по релевантности (popularity) и дополняется следующей
+    страницей, чтобы альтернативы не обрывались на первых 24.
+    """
+    query = matcher.normalize_name(raw_query) or raw_query.strip()
+    candidates: List[dict] = []
+    for page in range(1, PRODUCTS_PAGES + 1):
+        try:
+            products = client.products(
+                store_id, query=query, page=page, per_page=PRODUCTS_PER_PAGE, sort="popularity"
+            )
+        except NotFound:
+            break
+        except (KuperError, Unauthorized, AntiBotChallenge) as exc:
+            raise _map_error(exc)
+        if not products:
+            break
+        candidates.extend(_serialize_product(p) for p in products)
+        if len(products) < PRODUCTS_PER_PAGE:
+            break
+    return candidates
+
+
 @app.post("/resolve")
 def resolve_items(payload: ResolveRequest):
     client = _require_session()
@@ -522,24 +556,7 @@ def resolve_items(payload: ResolveRequest):
     results = []
     for item in payload.items:
         normalized = matcher.normalize_name(item.name)
-        query = normalized if normalized else item.name.strip()
-        candidates: List[dict] = []
-        # Выдача сортируется по релевантности (popularity) и дополняется
-        # второй страницей: так альтернативы не обрываются на первых 12.
-        for page in range(1, PRODUCTS_PAGES + 1):
-            try:
-                products = client.products(
-                    store_id, query=query, page=page, per_page=PRODUCTS_PER_PAGE, sort="popularity"
-                )
-            except NotFound:
-                break
-            except (KuperError, Unauthorized, AntiBotChallenge) as exc:
-                raise _map_error(exc)
-            if not products:
-                break
-            candidates.extend(_serialize_product(p) for p in products)
-            if len(products) < PRODUCTS_PER_PAGE:
-                break
+        candidates = _search_candidates(client, store_id, item.name)
         decision = matcher.pick_best(
             item.name,
             candidates,
@@ -561,6 +578,44 @@ def resolve_items(payload: ResolveRequest):
             }
         )
     return {"items": results}
+
+
+def _refine_decision(query: str, candidates: List[dict]) -> dict:
+    return matcher.pick_best(
+        query,
+        candidates,
+        previously_bought_ids=_state.history_ids,
+        previously_bought_names=_state.history_names,
+        alternatives_limit=ALTERNATIVES_LIMIT,
+        # Запрос написан пользователем и может быть фильтром («без сахара»),
+        # поэтому любое совпадение уже подходит: ранжируем, а не отсекаем.
+        min_overlap=REFINE_MIN_OVERLAP,
+    )
+
+
+@app.post("/search")
+def search_products(payload: SearchRequest):
+    """Уточняющий поиск по одному товару: «кофе растворимый 250 г»."""
+    client = _require_session()
+    store_id = payload.store_id or _require_store()
+    query = payload.query.strip()
+
+    decision = _refine_decision(query, _search_candidates(client, store_id, query))
+    fallback_token = None
+    if not decision["product"]:
+        # Уточнение бывает слишком узким для каталога («огурец засоленный»):
+        # ищем по главному слову запроса и ранжируем выдачу по всему запросу.
+        tokens = (matcher.normalize_name(query) or query).split()
+        if tokens and tokens[0] != matcher.normalize_name(query):
+            fallback_token = tokens[0]
+            decision = _refine_decision(query, _search_candidates(client, store_id, fallback_token))
+
+    return {
+        "query": query,
+        "normalized": matcher.normalize_name(query),
+        "fallback_token": fallback_token,
+        **decision,
+    }
 
 
 @app.post("/cart")

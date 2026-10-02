@@ -129,6 +129,11 @@ function loadRows() {
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed?.rows?.length) return null
+    // Сохранённый прогресс поиска не должен блокировать кнопку после перезагрузки.
+    for (const row of parsed.rows) {
+      row.refineBusy = false
+      if (!row.alternatives) row.alternatives = []
+    }
     return parsed
   } catch {
     return null
@@ -229,7 +234,13 @@ async function resolveItems() {
       isReplacement: !!d.is_replacement,
       reason: d.reason,
       alternatives: d.alternatives || [],
-      included: !!d.product
+      included: !!d.product,
+      refineOpen: false,
+      refineQuery: '',
+      refineBusy: false,
+      refineError: '',
+      refined: false,
+      refinedCount: 0
     }))
     step.value = 'resolve'
   } catch (e) {
@@ -245,6 +256,54 @@ function closeAndForget() {
   emit('close')
 }
 
+// Уточняющий поиск по одному товару: пользователь пишет ключевые слова
+// («растворимый 250 г») и получает новый набор вариантов для этой строки.
+function refineOpen(row) {
+  row.refineOpen = !row.refineOpen
+  row.refineQuery = row.refineOpen
+    ? `${row.sourceName}${row.chosen ? ' ' + row.chosen.name : ''}`.slice(0, 80)
+    : ''
+  row.refineError = ''
+}
+
+async function refineSearch(row) {
+  const query = (row.refineQuery || '').trim()
+  if (!query) {
+    row.refineError = 'Введите уточняющие слова'
+    return
+  }
+  row.refineBusy = true
+  row.refineError = ''
+  try {
+    const data = await store.search(query)
+    const found = data.product
+    const list = [found, ...(data.alternatives || []).map(a => a.product)]
+      .filter(Boolean)
+      .filter((p, i, arr) => arr.findIndex(x => x.product_id === p.product_id) === i)
+    row.refinedCount = list.length
+    row.refinedReason = data.reason
+    row.refineFallback = data.fallback_token || ''
+    // Уточнённые варианты заменяют обычные: выбор делается из них.
+    row.alternatives = list.map(p => ({ product: p, score: 0, overlap: 1 }))
+    if (!list.length) row.refineError = 'Ничего не нашлось — попробуйте другие слова'
+    row.refined = true
+  } catch (e) {
+    row.refineError = friendly(e)
+  } finally {
+    row.refineBusy = false
+  }
+}
+
+function refineReset(row) {
+  row.refined = false
+  row.refineOpen = false
+  row.refineQuery = ''
+  row.refineError = ''
+  row.refinedCount = 0
+  row.refineFallback = ''
+  resolveItems()
+}
+
 function restartResolve() {
   clearRows()
   rows.value = []
@@ -255,9 +314,12 @@ function restartResolve() {
 function onAlternative(row, index) {
   const alt = row.alternatives[Number(index)]
   if (!alt) return
+  const fromRefined = row.refined
   row.chosen = alt.product || null
   row.isReplacement = true
-  row.reason = 'выбрано вручную'
+  row.refined = false
+  row.refinedCount = 0
+  row.reason = fromRefined ? 'выбрано из уточнённого поиска' : 'выбрано вручную'
 }
 
 function rowTotal(row) {
@@ -482,9 +544,42 @@ async function resetSession() {
                 Товар не найден — пропущен.
               </div>
 
+              <div class="kup-refine">
+                <button class="kup-btn kup-small" @click="refineOpen(row)">
+                  {{ row.refineOpen ? '✖ Скрыть поиск' : '🔍 Уточнить поиск' }}
+                </button>
+                <span v-if="row.refined" class="kup-refine-note">
+                  уточнено: найдено {{ row.refinedCount }}
+                </span>
+              </div>
+
+              <div v-if="row.refineOpen" class="kup-refine-box">
+                <label class="kup-refine-label">Ключевые слова для «{{ row.sourceName }}»</label>
+                <div class="kup-refine-row">
+                  <input
+                    v-model="row.refineQuery"
+                    class="kup-input"
+                    placeholder="например: растворимый 250 г"
+                    @keyup.enter="refineSearch(row)"
+                  />
+                  <button class="kup-btn kup-primary kup-small" :disabled="row.refineBusy" @click="refineSearch(row)">
+                    {{ row.refineBusy ? 'Ищем...' : 'Найти' }}
+                  </button>
+                </div>
+                <p v-if="row.refineError" class="kup-refine-error">{{ row.refineError }}</p>
+                <p v-else-if="row.refined" class="kup-refine-hint">
+                  <template v-if="row.refineFallback">
+                    Точных совпадений нет — показан поиск по «{{ row.refineFallback }}».
+                  </template>
+                  <template v-else>
+                    Варианты ниже обновлены по вашему запросу — выберите нужный.
+                  </template>
+                </p>
+              </div>
+
               <div v-if="row.alternatives.length" class="kup-alts">
-                <details class="kup-alts-details">
-                  <summary>Другие варианты ({{ row.alternatives.length }})</summary>
+                <details class="kup-alts-details" :open="row.refined || row.alternatives.length <= 3">
+                  <summary>{{ row.refined ? 'Результаты уточнения' : 'Другие варианты' }} ({{ row.alternatives.length }})</summary>
                   <button
                     v-for="(a, ai) in row.alternatives"
                     :key="a.product.product_id"
@@ -767,6 +862,17 @@ async function resetSession() {
 }
 .kup-total { color: #555; }
 .kup-notfound { color: #999; font-size: 0.85rem; margin-top: 6px; }
+.kup-refine { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+.kup-refine-note { font-size: 0.8rem; color: #2e7d32; }
+.kup-refine-box {
+  margin-top: 6px; padding: 8px; border: 1px dashed #90caf9;
+  border-radius: 6px; background: #f7fbff; display: flex; flex-direction: column; gap: 6px;
+}
+.kup-refine-label { font-size: 0.8rem; color: #555; }
+.kup-refine-row { display: flex; gap: 6px; }
+.kup-refine-row .kup-input { flex: 1; }
+.kup-refine-error { margin: 0; font-size: 0.8rem; color: #d32f2f; }
+.kup-refine-hint { margin: 0; font-size: 0.8rem; color: #555; }
 .kup-alts { margin-top: 8px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 6px; }
 .kup-alts-details summary { cursor: pointer; color: #1976d2; }
 .kup-alt-item {

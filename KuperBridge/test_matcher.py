@@ -118,6 +118,23 @@ class PickBestTests(unittest.TestCase):
         self.assertEqual(normalize_name("Молоко 3,2%, 930мл"), "молоко")
         self.assertEqual(normalize_name("Апельсины 1,5 кг"), "апельсины")
 
+    def test_refine_query_allows_filter_words(self):
+        # Пользовательский запрос-фильтр («без сахара»): подходит товар,
+        # совпавший только по основному слову, поэтому порог снижается.
+        candidates = [cand(1, "Хлеб Бородинский 400 г", 60)]
+        self.assertIsNone(
+            pick_best("хлеб без сахара", candidates)["product"],
+            "строгий порог отбрасывает запрос с фильтром",
+        )
+        relaxed = pick_best("хлеб без сахара", candidates, min_overlap=0.01)
+        self.assertIsNotNone(relaxed["product"])
+        self.assertEqual(relaxed["product"]["product_id"], 1)
+
+    def test_refine_query_ignores_unrelated_candidates(self):
+        # Ноль совпадений не подходит даже в уточняющем поиске.
+        candidates = [cand(1, "Хлеб Бородинский 400 г", 60)]
+        self.assertIsNone(pick_best("яйцо с1", candidates, min_overlap=0.01)["product"])
+
 
 if __name__ == "__main__":
     unittest.main()

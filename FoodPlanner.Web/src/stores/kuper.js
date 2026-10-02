@@ -120,6 +120,17 @@ export const useKuperStore = defineStore('kuper', () => {
     }
   }
 
+  async function search(query, storeId) {
+    error.value = ''
+    loading.value = true
+    try {
+      const { data } = await kuperApi.search(query, storeId ?? selectedStoreId.value ?? undefined)
+      return data
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function addToCart(items) {
     error.value = ''
     const { data } = await kuperApi.addToCart(items)
@@ -142,6 +153,6 @@ export const useKuperStore = defineStore('kuper', () => {
     status, profile, stores, selectedStoreId, storeName, cartUrl, loading, error,
     selectedCity, coordinates,
     fetchStatus, fetchSession, connectByCookie, setCity, refreshStores,
-    selectStore, refreshHistory, resolve, addToCart, disconnect
+    selectStore, refreshHistory, resolve, search, addToCart, disconnect
   }
 })

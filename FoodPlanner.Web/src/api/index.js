@@ -69,6 +69,7 @@ export const kuperApi = {
   refreshStores: (lat, lon, wide = true) => api.post('/kuper/stores', { lat, lon, wide }),
   refreshHistory: () => api.post('/kuper/history/refresh'),
   resolve: (listId) => api.post('/kuper/resolve', { listId }),
+  search: (query, storeId) => api.post('/kuper/search', { query, storeId }),
   addToCart: (items) => api.post('/kuper/cart', { items }),
   getCart: () => api.get('/kuper/cart'),
   disconnect: () => api.delete('/kuper/session')

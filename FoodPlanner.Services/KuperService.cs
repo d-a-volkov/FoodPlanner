@@ -81,6 +81,9 @@ public class KuperService : IKuperService
     public Task<string> ResolveAsync(KuperResolveRequest request)
         => SendAsync(HttpMethod.Post, "/resolve", new { items = request.Items });
 
+    public Task<string> SearchAsync(KuperSearchRequest request)
+        => SendAsync(HttpMethod.Post, "/search", new { query = request.Query, store_id = request.StoreId });
+
     public Task<string> AddToCartAsync(KuperCartRequest request)
     {
         var items = request.Items.Select(i => new { product_id = i.ProductId, quantity = i.Quantity }).ToList();
