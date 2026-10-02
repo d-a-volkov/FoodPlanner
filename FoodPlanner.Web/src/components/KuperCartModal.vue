@@ -63,7 +63,8 @@ const activeCityName = computed(() => {
 watch(() => props.show, async (v) => {
   if (!v) return
   error.value = ''
-  rows.value = []
+  const saved = loadRows()
+  rows.value = saved?.rows || []
   result.value = null
   sessionCookie.value = ''
   spscCookie.value = ''
@@ -73,17 +74,69 @@ watch(() => props.show, async (v) => {
   } catch (e) {
     error.value = friendly(e)
   }
+  // Подбор привязан к магазину: если магазин сменился — старые строки не годятся.
+  if (saved && store.selectedStoreId && saved.storeId !== store.selectedStoreId) {
+    clearRows()
+    rows.value = []
+  }
   if (!connected.value) step.value = 'connect'
-  else step.value = storeSelected.value ? 'resolve' : 'store'
+  // Сохранённые строки подбора уже восстановлены выше — показываем их сразу.
+  else if (storeSelected.value) step.value = 'resolve'
+  else step.value = 'store'
 })
 
 function friendly(e) {
-  const msg = e?.response?.data?.error || e?.response?.data || e?.message
-  if (typeof msg === 'string') return msg
-  if (msg && typeof msg === 'object' && msg.detail) return msg.detail
-  if (typeof msg === 'string') return msg
-  return 'Неизвестная ошибка'
+  const status = e?.response?.status
+  const data = e?.response?.data
+  let msg = data?.error || data?.detail || data?.message
+  if (typeof data === 'string' && data.trim()) msg = data.trim()
+  if (!msg && Array.isArray(data?.errors)) {
+    msg = Object.values(data.errors).flat().filter(Boolean).join('; ')
+  }
+  if (!msg) msg = e?.message
+  if (!msg) msg = 'Пустой ответ сервера'
+  const prefix = status ? `Ошибка ${status}. ` : ''
+  return prefix + String(msg)
 }
+
+// Результаты подбора сохраняем, чтобы закрытие формы не сбрасывало работу.
+const STORAGE_PREFIX = 'kuperResolve'
+
+function storageKey(listId) {
+  return `${STORAGE_PREFIX}:${listId}`
+}
+
+function saveRows() {
+  if (!props.list) return
+  try {
+    localStorage.setItem(storageKey(props.list.id), JSON.stringify({
+      at: Date.now(),
+      storeId: store.selectedStoreId,
+      rows: rows.value
+    }))
+  } catch { /* приватный режим / переполнение */ }
+}
+
+function loadRows() {
+  if (!props.list) return null
+  try {
+    const raw = localStorage.getItem(storageKey(props.list.id))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.rows?.length) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function clearRows() {
+  if (!props.list) return
+  try { localStorage.removeItem(storageKey(props.list.id)) } catch { /* игнорируем */ }
+}
+
+watch(rows, () => saveRows(), { deep: true })
+watch(() => props.show, v => { if (v) saveRows() })
 
 async function connectByCookie() {
   error.value = ''
@@ -182,6 +235,18 @@ async function resolveItems() {
   }
 }
 
+function closeAndForget() {
+  clearRows()
+  emit('close')
+}
+
+function restartResolve() {
+  clearRows()
+  rows.value = []
+  result.value = null
+  step.value = 'resolve'
+}
+
 function onAlternative(row, index) {
   const alt = row.alternatives[Number(index)]
   if (!alt) return
@@ -209,9 +274,14 @@ async function addToCart() {
       orderNumber: data.order_number,
       added: data.added || [],
       failed: data.failed || [],
-      cartUrl: store.cartUrl || 'https://web.kuper.ru'
+      cartUrl: data.cart_url || store.cartUrl || 'https://web.kuper.ru/cart',
+      byProduct: new Map(rows.value.map(r => [r.chosen?.product_id, r.sourceName]))
     }
     step.value = 'result'
+    // Пользователь просил сразу видеть товары в корзине Купера.
+    if (result.value.added.length) {
+      window.open(result.value.cartUrl, '_blank', 'noopener')
+    }
   } catch (e) {
     error.value = friendly(e)
     if (e?.response?.status === 401) step.value = 'connect'
@@ -366,7 +436,11 @@ async function resetSession() {
             </button>
           </div>
 
-          <div v-if="rows.length" class="kup-rows">
+              <div v-if="rows.length" class="kup-actions">
+                <button class="kup-btn kup-small" @click="restartResolve">Сбросить подбор</button>
+              </div>
+
+              <div v-if="rows.length" class="kup-rows">
             <div v-for="row in rows" :key="row.key" class="kup-row" :class="{ excluded: !row.included }">
               <header class="kup-row-head">
                 <label class="kup-include">
@@ -404,22 +478,20 @@ async function resetSession() {
               </div>
 
               <div v-if="row.alternatives.length" class="kup-alts">
-                <label>
-                  Заменить на:
-                  <select
-                    class="kup-select"
-                    @change="onAlternative(row, $event.target.value)"
+                <details class="kup-alts-details">
+                  <summary>Другие варианты ({{ row.alternatives.length }})</summary>
+                  <button
+                    v-for="(a, ai) in row.alternatives"
+                    :key="a.product.product_id"
+                    type="button"
+                    class="kup-alt-item"
+                    @click="onAlternative(row, ai)"
                   >
-                    <option value="" disabled :selected="true">— альтернативы —</option>
-                    <option
-                      v-for="(a, ai) in row.alternatives"
-                      :key="a.product.product_id"
-                      :value="ai"
-                    >
-                      {{ a.product.name }} · {{ a.product.price }} ₽{{ a.product.human_volume ? ' · ' + a.product.human_volume : '' }}
-                    </option>
-                  </select>
-                </label>
+                    <img v-if="a.product.image_url" :src="a.product.image_url" alt="" class="kup-alt-img" />
+                    <span class="kup-alt-name">{{ a.product.name }}</span>
+                    <span class="kup-alt-price">{{ a.product.price }} ₽</span>
+                  </button>
+                </details>
               </div>
             </div>
           </div>
@@ -438,15 +510,16 @@ async function resetSession() {
             <p v-if="failedCount" class="kup-result-fail">Не удалось добавить: {{ failedCount }}</p>
             <p v-if="result?.failed?.length" class="kup-result-list">
               <span v-for="f in result.failed" :key="f.product_id" class="kup-fail-item">
-                товар #{{ f.product_id }}: {{ f.error }}
+                {{ result.byProduct?.get(f.product_id) || 'товар' }} (#{{ f.product_id }}): {{ f.error }}
               </span>
             </p>
           </div>
           <div class="kup-actions">
-            <a class="kup-btn kup-primary kup-link" :href="result?.cartUrl || 'https://web.kuper.ru'" target="_blank" rel="noopener">
-              Открыть корзину на web.kuper.ru
+            <a class="kup-btn kup-primary kup-link" :href="result?.cartUrl || 'https://web.kuper.ru/cart'" target="_blank" rel="noopener">
+              🛒 Открыть корзину на web.kuper.ru
             </a>
-            <button class="kup-btn" @click="emit('close')">Готово</button>
+            <button class="kup-btn" @click="step = 'resolve'">Вернуться к подбору</button>
+            <button class="kup-btn" @click="closeAndForget">Закрыть</button>
           </div>
         </div>
       </div>
@@ -690,6 +763,16 @@ async function resetSession() {
 .kup-total { color: #555; }
 .kup-notfound { color: #999; font-size: 0.85rem; margin-top: 6px; }
 .kup-alts { margin-top: 8px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 6px; }
+.kup-alts-details summary { cursor: pointer; color: #1976d2; }
+.kup-alt-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 6px; margin-top: 4px; border: 1px solid #e0e0e0; border-radius: 6px;
+  background: #fff; cursor: pointer; font: inherit;
+}
+.kup-alt-item:hover { border-color: #1976d2; background: #f5faff; }
+.kup-alt-img { width: 32px; height: 32px; object-fit: contain; border-radius: 4px; }
+.kup-alt-name { flex: 1; }
+.kup-alt-price { white-space: nowrap; font-weight: 600; }
 .kup-result-title { font-weight: 700; font-size: 1.05rem; margin: 0; }
 .kup-result-fail { color: #d32f2f; margin: 4px 0 0; }
 .kup-result-list { display: flex; flex-direction: column; gap: 4px; color: #b71c1c; font-size: 0.8rem; margin: 6px 0 0; }

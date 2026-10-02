@@ -44,8 +44,20 @@ STORES_PER_PAGE = 100
 STORES_MAX_PAGES = 3
 STORES_OFFSET = 0.045  # ~5 км
 STORES_MAX_WORKERS = 9
+#: Поиск товаров: страницы выдачи и число альтернатив в ответе.
+PRODUCTS_PER_PAGE = 24
+PRODUCTS_PAGES = 2
+ALTERNATIVES_LIMIT = 10
+#: Страница корзины Купера, куда ведёт кнопка после добавления.
+KUPER_CART_URL = "https://web.kuper.ru/cart"
 
 app = FastAPI(title="kuper-bridge", version="0.4.2")
+
+
+def _brief(exc: Exception) -> str:
+    """Короткое читаемое сообщение об ошибке для показа в UI."""
+    text = str(exc).strip() or exc.__class__.__name__
+    return text[:300]
 
 
 def _patch_order_parsing() -> None:
@@ -175,8 +187,34 @@ _state = Session()
 # -- вспомогательные -------------------------------------------------------
 
 
+def _order_data(order) -> dict:
+    """Данные заказа/корзины.
+
+    ``to_json`` берётся первым: ``to_dict`` у Order опирается на ``__dict__``
+    и теряет вложенные ``shipments``, из-за чего корзина выглядела пустой.
+    """
+    if order is None:
+        return {}
+    for attr in ("to_json", "to_dict"):
+        method = getattr(order, attr, None)
+        if not callable(method):
+            continue
+        try:
+            value = method()
+        except Exception:  # noqa: BLE001 - приоритет у следующего способа
+            continue
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                continue
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
 def _serialize_product(product) -> dict:
-    data = product.to_dict() if hasattr(product, "to_dict") else dict(product)
+    data = _order_data(product)
     images = data.get("images") or []
     image_url = ""
     for img in images:
@@ -483,18 +521,29 @@ def resolve_items(payload: ResolveRequest):
     for item in payload.items:
         normalized = matcher.normalize_name(item.name)
         query = normalized if normalized else item.name.strip()
-        try:
-            products = client.products(store_id, query=query, per_page=12, sort="unit_price_asc")
-        except NotFound:
-            products = []
-        except (KuperError, Unauthorized, AntiBotChallenge) as exc:
-            raise _map_error(exc)
-        candidates = [_serialize_product(p) for p in products]
+        candidates: List[dict] = []
+        # Выдача сортируется по релевантности (popularity) и дополняется
+        # второй страницей: так альтернативы не обрываются на первых 12.
+        for page in range(1, PRODUCTS_PAGES + 1):
+            try:
+                products = client.products(
+                    store_id, query=query, page=page, per_page=PRODUCTS_PER_PAGE, sort="popularity"
+                )
+            except NotFound:
+                break
+            except (KuperError, Unauthorized, AntiBotChallenge) as exc:
+                raise _map_error(exc)
+            if not products:
+                break
+            candidates.extend(_serialize_product(p) for p in products)
+            if len(products) < PRODUCTS_PER_PAGE:
+                break
         decision = matcher.pick_best(
             item.name,
             candidates,
             previously_bought_ids=_state.history_ids,
             previously_bought_names=_state.history_names,
+            alternatives_limit=ALTERNATIVES_LIMIT,
         )
         results.append(
             {
@@ -518,8 +567,8 @@ def add_to_cart(payload: CartRequest):
     store_id = _require_store()
     try:
         cart: Optional[Order] = client.cart()
-    except KuperError as exc:
-        raise _map_error(exc)
+    except Exception as exc:
+        raise HTTPException(502, f"Не удалось получить корзину Купера: {_brief(exc)}")
     order_number = getattr(cart, "number", None) if cart else None
     if not order_number:
         raise HTTPException(
@@ -534,13 +583,22 @@ def add_to_cart(payload: CartRequest):
         try:
             client.line_item_add(order_number, store_id, item.product_id, item.quantity)
             added.append({"product_id": item.product_id, "quantity": item.quantity})
-        except KuperError as exc:
-            failed.append({"product_id": item.product_id, "quantity": item.quantity, "error": str(exc)})
+        except Exception as exc:
+            failed.append(
+                {
+                    "product_id": item.product_id,
+                    "quantity": item.quantity,
+                    "error": _brief(exc),
+                }
+            )
+    if not added and failed:
+        detail = failed[0]["error"]
+        raise HTTPException(502, f"Купер не принял ни один товар: {detail}")
     return {
         "order_number": order_number,
         "added": added,
         "failed": failed,
-        "cart_url": "https://web.kuper.ru",
+        "cart_url": KUPER_CART_URL,
     }
 
 
@@ -553,7 +611,7 @@ def get_cart_summary():
         raise _map_error(exc)
     if not cart:
         return {"order_number": None, "items": []}
-    data = cart.to_dict()
+    data = _order_data(cart)
     line_items = []
     for shipment in data.get("shipments") or []:
         for it in shipment.get("line_items") or []:
