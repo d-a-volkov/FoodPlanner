@@ -667,7 +667,7 @@ async function resetSession() {
                 Сервер видит пустую корзину — товары не добавились.
               </p>
               <ul v-else class="kup-cartbox-list">
-                <li v-for="i in (cart.items || []).slice(0, 30)" :key="`${i.product_id}-${i.quantity}`">
+                <li v-for="i in (cart.items || [])" :key="`${i.product_id}-${i.quantity}`">
                   {{ i.name }} <span class="kup-cartbox-qty">× {{ i.quantity }}</span>
                 </li>
               </ul>

@@ -648,21 +648,41 @@ def search_products(payload: SearchRequest):
     }
 
 
+def _cart_number(client, store_id: int) -> Optional[str]:
+    """Номер активной корзины; создаём её, если её нет.
+
+    Купер не создаёт корзину сам: без неё ``/api/multiretailer_order``
+    возвращает последний заказ, в том числе уже завершённый, и товары
+    добавляются в него вместо корзины — сайт такую корзину не показывает.
+    """
+    try:
+        cart = client.cart()
+    except Exception:
+        cart = None
+    data = _order_data(cart) if cart else {}
+    number = data.get("number")
+    # Состояние cart — единственная корзина; complete/shipped — это заказ.
+    if number and data.get("state") == "cart":
+        return number
+    try:
+        created = client._request.post("/api/v2/orders", {"store_id": store_id})
+    except Exception as exc:
+        raise HTTPException(502, f"Не удалось создать корзину Купера: {_brief(exc)}")
+    number = ((created or {}).get("order") or {}).get("number")
+    if not number:
+        raise HTTPException(
+            502,
+            "Не удалось создать корзину Купера. Откройте https://web.kuper.ru/cart "
+            "и обновите страницу, затем повторите.",
+        )
+    return number
+
+
 @app.post("/cart")
 def add_to_cart(payload: CartRequest):
     client = _require_session()
     store_id = _require_store()
-    try:
-        cart: Optional[Order] = client.cart()
-    except Exception as exc:
-        raise HTTPException(502, f"Не удалось получить корзину Купера: {_brief(exc)}")
-    order_number = getattr(cart, "number", None) if cart else None
-    if not order_number:
-        raise HTTPException(
-            409,
-            "Не удалось получить корзину Купера. Откройте https://web.kuper.ru, "
-            "положите один любой товар в корзину и попробуйте снова.",
-        )
+    order_number = _cart_number(client, store_id)
 
     added = []
     failed = []
@@ -699,6 +719,9 @@ def get_cart_summary():
     if not cart:
         return {"order_number": None, "items": []}
     data = _order_data(cart)
+    # Завершённый заказ Купер отдаёт на месте корзины — показывать его нельзя.
+    if data.get("state") not in (None, "cart"):
+        return {"order_number": None, "state": data.get("state"), "total": None, "items": []}
     line_items = []
     for shipment in data.get("shipments") or []:
         for it in shipment.get("line_items") or []:
