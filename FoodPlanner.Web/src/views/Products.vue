@@ -5,11 +5,18 @@ import { productsApi } from '../api'
 
 const store = useProductsStore()
 
-const searchQuery = ref('')
-const filterCategory = ref('')
-const filterStatus = ref('')
+const searchQuery = ref(localStorage.getItem('productsSearch') || '')
+const filterCategory = ref(localStorage.getItem('productsFilterCategory') ?? '')
+const filterStatus = ref(localStorage.getItem('productsFilterStatus') ?? '')
 const showAddModal = ref(false)
 const editingProduct = ref(null)
+
+// Фильтры применяются только по явной команде (обновление страницы или
+// кнопка). Применённые значения и список подходящих id фиксируются снимком:
+// иначе смена статуса тут же скрыла бы строку и ошибочно изменённую запись
+// нельзя было бы вернуть обратно.
+const appliedFilters = ref({ query: '', category: '', status: '' })
+const appliedIds = ref(null)
 
 const form = ref({
   name: '',
@@ -24,19 +31,51 @@ const form = ref({
   quantityInStock: 0
 })
 
-const filteredProducts = computed(() => {
-  let list = store.products
+function matchesFilters(product) {
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
-    list = list.filter(p => p.name.toLowerCase().includes(q))
+    if (!product.name.toLowerCase().includes(q)) return false
   }
-  if (filterCategory.value !== '') {
-    list = list.filter(p => p.category === Number(filterCategory.value))
+  if (filterCategory.value !== '' && product.category !== Number(filterCategory.value)) return false
+  if (filterStatus.value !== '' && product.stockStatus !== Number(filterStatus.value)) return false
+  return true
+}
+
+function applyFilters() {
+  localStorage.setItem('productsSearch', searchQuery.value)
+  localStorage.setItem('productsFilterCategory', String(filterCategory.value))
+  localStorage.setItem('productsFilterStatus', String(filterStatus.value))
+  const active = !!searchQuery.value || filterCategory.value !== '' || filterStatus.value !== ''
+  appliedFilters.value = {
+    query: searchQuery.value,
+    category: filterCategory.value,
+    status: filterStatus.value
   }
-  if (filterStatus.value !== '') {
-    list = list.filter(p => p.stockStatus === Number(filterStatus.value))
-  }
-  return list
+  appliedIds.value = active
+    ? new Set(store.products.filter(matchesFilters).map(p => p.id))
+    : null
+}
+
+function resetFilters() {
+  searchQuery.value = ''
+  filterCategory.value = ''
+  filterStatus.value = ''
+  applyFilters()
+}
+
+const filtersPending = computed(() => {
+  const applied = appliedFilters.value
+  return applied.query !== searchQuery.value
+    || applied.category !== filterCategory.value
+    || applied.status !== filterStatus.value
+})
+
+const filtersActive = computed(() => appliedIds.value !== null)
+
+const filteredProducts = computed(() => {
+  const ids = appliedIds.value
+  if (!ids) return store.products
+  return store.products.filter(p => ids.has(p.id))
 })
 
 const groupedProducts = computed(() => {
@@ -77,9 +116,15 @@ const stats = computed(() => ({
   notUsed: store.products.filter(p => p.stockStatus === 3).length
 }))
 
-onMounted(() => {
-  store.fetchCategories()
-  store.fetchProducts()
+async function refreshAll() {
+  await store.fetchProducts()
+  applyFilters()
+}
+
+onMounted(async () => {
+  await store.fetchCategories()
+  await store.fetchProducts()
+  applyFilters()
 })
 
 function openAdd() {
@@ -268,6 +313,7 @@ async function toggleStock(product) {
         type="text"
         placeholder="Поиск продукта..."
         class="search-input"
+        @keyup.enter="applyFilters"
       />
       <select v-model="filterCategory" class="filter-select">
         <option value="">Все категории</option>
@@ -277,9 +323,22 @@ async function toggleStock(product) {
         <option value="">Все статусы</option>
         <option v-for="(info, key) in store.STOCK_STATUS" :key="key" :value="key">{{ info.label }}</option>
       </select>
+      <button class="btn btn-primary" :disabled="!filtersPending" @click="applyFilters">
+        Применить фильтры
+      </button>
+      <button class="btn" :disabled="!filtersPending && !filtersActive" @click="resetFilters">Сбросить</button>
+      <button class="btn" @click="refreshAll">Обновить</button>
       <button class="btn" @click="openCategories">Категории</button>
       <button class="btn btn-primary" @click="openAdd">+ Добавить продукт</button>
     </div>
+
+    <p v-if="filtersPending" class="filters-hint pending">
+      Фильтры изменены, но пока не применены — список прежний. Нажмите «Применить фильтры».
+    </p>
+    <p v-else-if="filtersActive" class="filters-hint">
+      Фильтры применены при загрузке: {{ filteredProducts.length }} из {{ store.products.length }}.
+      Изменённый статус не скрывает запись — чтобы отфильтровать заново, нажмите «Применить фильтры» или «Обновить».
+    </p>
 
     <div v-if="store.loading" class="loading">Загрузка...</div>
     <div v-else-if="store.error" class="error">{{ store.error }}</div>
@@ -617,6 +676,15 @@ h1 { margin-top: 0; color: #333; }
 .btn-danger { color: #f44336; border-color: #f44336; }
 .btn-danger:hover { background: #ffebee; }
 .btn-small { padding: 4px 8px; font-size: 12px; margin-right: 4px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled:hover { background: #fff; }
+.btn-primary:disabled:hover { background: #1976d2; }
+.filters-hint {
+  margin: -6px 0 4px;
+  font-size: 12px;
+  color: #666;
+}
+.filters-hint.pending { color: #e65100; font-weight: 500; }
 
 .loading, .error, .empty {
   text-align: center;
