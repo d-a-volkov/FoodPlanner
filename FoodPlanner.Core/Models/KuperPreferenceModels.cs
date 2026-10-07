@@ -40,6 +40,8 @@ public class KuperPreferences
 /// <summary>Ссылка на предпочтение для подбора: идентификатор и имя.</summary>
 public class KuperPreferRef
 {
+    /// <summary>Ключ в теле запроса к kuper-bridge — snake_case, как у всей истории.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("product_id")]
     public long ProductId { get; set; }
 
     public string Name { get; set; } = string.Empty;
