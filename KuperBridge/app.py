@@ -13,7 +13,7 @@ import json
 import os
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -405,76 +405,157 @@ def _map_error(exc: Exception) -> HTTPException:
     return HTTPException(502, f"Ошибка Kuper: {exc}")
 
 
-def _refresh_history(client: Client) -> None:
-    """История покупок — вспомогательные подсказки, ошибки не критичны."""
-    try:
-        orders: List[Order] = client.orders(previous=True)
-    except Exception:
-        return
+def _raw_orders(client: Client) -> List[dict]:
+    """Сырые заказы для истории покупок.
+
+    ``/api/v2/orders/previous`` отдаёт ``{"order": {...}}``, а библиотечный
+    ``orders(previous=True)`` ищет ключ ``orders`` и превращает ответ в
+    ``[None]``. Разбор kuper_api здесь непригоден: у заказов нет ``id``,
+    а товары лежат во вложенном ``line_item.product``. Читаем JSON напрямую.
+    """
+    raws: List[dict] = []
+    for path in ("/api/v2/orders", "/api/v2/orders/previous"):
+        try:
+            data = client._request.get(path)
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            for key in ("orders", "order"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    raws.extend(item for item in value if isinstance(item, dict))
+                elif isinstance(value, dict):
+                    raws.append(value)
+        elif isinstance(data, list):
+            raws.extend(item for item in data if isinstance(item, dict))
+
+    orders: Dict[str, dict] = {}
+    for raw in raws:
+        number = raw.get("number")
+        # Текущую корзину покупкой считать нельзя.
+        if not number or raw.get("state") == "cart":
+            continue
+        existing = orders.get(number)
+        # Предпочитаем ответ, в котором уже есть товары.
+        if existing is None or (
+            not _has_line_items(existing) and _has_line_items(raw)
+        ):
+            orders[number] = raw
+    return list(orders.values())
+
+
+def _has_line_items(order: dict) -> bool:
+    return any(
+        isinstance(shipment, dict) and shipment.get("line_items")
+        for shipment in order.get("shipments") or []
+    )
+
+
+def _order_shipments(client: Client, order: dict) -> List[dict]:
+    """Отгрузки заказа с товарами.
+
+    Список ``/api/v2/orders`` приходит без ``line_items`` — по номеру
+    заказа догружаем подробный ответ.
+    """
+    shipments = [
+        shipment for shipment in order.get("shipments") or []
+        if isinstance(shipment, dict)
+    ]
+    if not _has_line_items(order):
+        number = order.get("number")
+        if not number:
+            return shipments
+        try:
+            data = client._request.get(f"/api/v2/orders/{number}")
+        except Exception:
+            return shipments
+        detailed = data.get("order") if isinstance(data, dict) else None
+        if isinstance(detailed, dict):
+            shipments = [
+                shipment for shipment in detailed.get("shipments") or []
+                if isinstance(shipment, dict)
+            ]
+    return shipments
+
+
+def _aggregate_history(
+    orders: List[Tuple[dict, List[dict]]],
+) -> Tuple[set, Dict[int, str], List[dict]]:
+    """Агрегация сырых заказов в историю покупок (чистая функция)."""
     ids: set = set()
     names: Dict[int, str] = {}
     aggregated: Dict[int, dict] = {}
-    for order in orders or []:
-        if order is None:
-            continue
-        for shipment in getattr(order, "shipments", None) or []:
-            window = getattr(shipment, "delivery_window", None)
-            # Даты у Order kuper_api не парсит: окно доставки остаётся
-            # единственным известным временем покупки.
-            when = getattr(window, "starts_at", None) if window else None
-            for item in getattr(shipment, "line_items", None) or []:
-                oid = getattr(item, "offer_id", None)
-                nm = getattr(item, "name", "")
-                if not oid:
+    for _order, shipments in orders:
+        for shipment in shipments:
+            window = shipment.get("delivery_window")
+            when = window.get("starts_at") if isinstance(window, dict) else None
+            for item in shipment.get("line_items") or []:
+                if not isinstance(item, dict):
                     continue
+                product = item.get("product")
+                product = product if isinstance(product, dict) else {}
+                pid_raw = product.get("id", item.get("offer_id"))
                 try:
-                    pid = int(oid)
+                    pid = int(pid_raw)
                 except (TypeError, ValueError):
                     continue
+                nm = product.get("name") or item.get("name") or ""
                 ids.add(pid)
                 if nm:
                     names[pid] = nm
                 try:
-                    quantity = int(getattr(item, "quantity", 0) or 0)
+                    quantity = int(item.get("quantity") or 0)
                 except (TypeError, ValueError):
                     quantity = 0
                 count = quantity if quantity > 0 else 1
-                price = getattr(item, "price", None)
+                price = item.get("price", product.get("price"))
+                price = price if isinstance(price, (int, float)) else None
                 entry = aggregated.get(pid)
                 if entry is None:
                     aggregated[pid] = {
                         "product_id": pid,
                         "name": nm,
-                        "sku": getattr(item, "sku", None),
-                        "human_volume": getattr(item, "human_volume", None),
+                        "sku": product.get("sku") or item.get("sku"),
+                        "human_volume": product.get("human_volume"),
                         "times_bought": count,
                         "last_bought_at": when if isinstance(when, str) else None,
-                        "last_price": price if isinstance(price, (int, float)) else None,
+                        "last_price": price,
                     }
                     continue
                 entry["times_bought"] += count
                 if nm:
                     entry["name"] = nm
-                sku = getattr(item, "sku", None)
-                if sku:
-                    entry["sku"] = sku
-                volume = getattr(item, "human_volume", None)
-                if volume:
-                    entry["human_volume"] = volume
+                if product.get("sku") or item.get("sku"):
+                    entry["sku"] = product.get("sku") or item.get("sku")
+                if product.get("human_volume"):
+                    entry["human_volume"] = product.get("human_volume")
                 # Цена и дата — от самой свежей покупки; без даты берём
                 # последнюю увиденную цену.
                 known = entry.get("last_bought_at")
                 if isinstance(when, str) and (not known or when > known):
                     entry["last_bought_at"] = when
-                    if isinstance(price, (int, float)):
+                    if price is not None:
                         entry["last_price"] = price
-                elif not known and isinstance(price, (int, float)):
+                elif not known and price is not None:
                     entry["last_price"] = price
-    _state.history_ids = ids
-    _state.history_names = names
-    _state.history_items = sorted(
+    return ids, names, sorted(
         aggregated.values(), key=lambda e: (-e["times_bought"], e["name"])
     )
+
+
+def _refresh_history(client: Client) -> None:
+    """История покупок — вспомогательные подсказки, ошибки не критичны."""
+    try:
+        shipments = [
+            (order, _order_shipments(client, order))
+            for order in _raw_orders(client)
+        ]
+        ids, names, items = _aggregate_history(shipments)
+    except Exception:
+        return
+    _state.history_ids = ids
+    _state.history_names = names
+    _state.history_items = items
     _state.history_refreshed_at = time.time()
     try:
         _state.save()
