@@ -15,7 +15,7 @@ export const useKuperPreferencesStore = defineStore('kuperPreferences', () => {
     const all = doc?.items || []
     items.value = all.filter(i => !i.excluded)
     hiddenItems.value = all.filter(i => i.excluded)
-    syncedAt.value = doc?.synced_at || null
+    syncedAt.value = doc?.syncedAt || null
   }
 
   async function fetch() {

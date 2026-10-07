@@ -5,7 +5,7 @@ import { useKuperPreferencesStore } from '../stores/kuperPreferences'
 const prefs = useKuperPreferencesStore()
 
 const sortedActive = computed(() =>
-  [...prefs.items].sort((a, b) => (b.times_bought || 0) - (a.times_bought || 0))
+  [...prefs.items].sort((a, b) => (b.timesBought || 0) - (a.timesBought || 0))
 )
 
 function formatDate(value) {
@@ -16,12 +16,12 @@ function formatDate(value) {
 
 function hideItem(item) {
   if (confirm(`Скрыть «${item.name}» из предпочтений?`)) {
-    prefs.remove(item.product_id)
+    prefs.remove(item.productId)
   }
 }
 
 function restoreItem(item) {
-  prefs.restore(item.product_id)
+  prefs.restore(item.productId)
 }
 
 onMounted(async () => {
@@ -60,16 +60,16 @@ onMounted(async () => {
     <template v-if="sortedActive.length">
       <h2>Активные ({{ sortedActive.length }})</h2>
       <div class="prefs-list">
-        <div v-for="item in sortedActive" :key="item.product_id" class="pref-row">
+        <div v-for="item in sortedActive" :key="item.productId" class="pref-row">
           <div class="pref-info">
             <div class="pref-name">
               {{ item.name }}
-              <span v-if="item.human_volume" class="pref-volume">{{ item.human_volume }}</span>
+              <span v-if="item.humanVolume" class="pref-volume">{{ item.humanVolume }}</span>
             </div>
             <div class="pref-meta">
-              <span v-if="item.times_bought">покупок: {{ item.times_bought }}</span>
-              <span v-if="item.last_price">по {{ item.last_price }} ₽</span>
-              <span v-if="item.last_bought_at">последняя покупка: {{ formatDate(item.last_bought_at) }}</span>
+              <span v-if="item.timesBought">покупок: {{ item.timesBought }}</span>
+              <span v-if="item.lastPrice">по {{ item.lastPrice }} ₽</span>
+              <span v-if="item.lastBoughtAt">последняя покупка: {{ formatDate(item.lastBoughtAt) }}</span>
             </div>
           </div>
           <button class="btn btn-small btn-danger" title="Скрыть из предпочтений" @click="hideItem(item)">Скрыть</button>
@@ -83,11 +83,11 @@ onMounted(async () => {
     <div v-if="prefs.hiddenItems.length" class="hidden-block">
       <h2>Скрытые ({{ prefs.hiddenItems.length }})</h2>
       <div class="prefs-list">
-        <div v-for="item in prefs.hiddenItems" :key="item.product_id" class="pref-row muted">
+        <div v-for="item in prefs.hiddenItems" :key="item.productId" class="pref-row muted">
           <div class="pref-info">
             <div class="pref-name">{{ item.name }}</div>
             <div class="pref-meta">
-              <span v-if="item.times_bought">покупок: {{ item.times_bought }}</span>
+              <span v-if="item.timesBought">покупок: {{ item.timesBought }}</span>
             </div>
           </div>
           <button class="btn btn-small" title="Вернуть в предпочтения" @click="restoreItem(item)">Вернуть</button>
