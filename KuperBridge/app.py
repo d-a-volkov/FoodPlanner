@@ -52,6 +52,8 @@ ALTERNATIVES_LIMIT = 10
 KUPER_CART_URL = "https://web.kuper.ru/cart"
 #: Порог совпадения для уточняющего поиска по запросу пользователя.
 REFINE_MIN_OVERLAP = 0.01
+#: Как часто обновлять историю покупок автоматически (секунды).
+HISTORY_TTL_SECONDS = 600
 
 app = FastAPI(title="kuper-bridge", version="0.4.4")
 
@@ -103,8 +105,18 @@ class ResolveItem(BaseModel):
     unit: str = "pieces"
 
 
+class PreferItem(BaseModel):
+    """Позиция списка предпочтений из истории покупок (id + имя)."""
+
+    product_id: int = Field(..., gt=0)
+    name: str = Field(..., min_length=1, max_length=300)
+    times_bought: int = Field(0, ge=0)
+
+
 class ResolveRequest(BaseModel):
     items: List[ResolveItem] = Field(..., min_items=1, max_items=100)
+    #: Список предпочтений; None — взять сохранённую историю бриджа.
+    prefer: Optional[List[PreferItem]] = Field(None, max_length=5000)
 
 
 class CartItem(BaseModel):
@@ -123,6 +135,8 @@ class SearchRequest(BaseModel):
 
     query: str = Field(..., min_length=1, max_length=120)
     store_id: Optional[int] = None
+    #: Список предпочтений; None — взять сохранённую историю бриджа.
+    prefer: Optional[List[PreferItem]] = Field(None, max_length=5000)
 
 
 class StoresRequest(BaseModel):
@@ -145,6 +159,7 @@ class Session:
         self.lon: float = DEFAULT_LON
         self.history_ids: set = set()
         self.history_names: Dict[int, str] = {}
+        self.history_items: List[dict] = []
         self.history_refreshed_at: Optional[float] = None
         self._lock = threading.Lock()
 
@@ -170,7 +185,35 @@ class Session:
         stores = data.get("stores")
         if isinstance(stores, list):
             self.stores = [s for s in stores if isinstance(s, dict) and s.get("store_id")]
-        # историю подтягиваем по требованию (/history/refresh или /resolve)
+        # история переживает перезапуски: иначе подбор после рестарта
+        # начинается с нуля до первого обновления
+        history_ids = data.get("history_ids")
+        if isinstance(history_ids, list):
+            for x in history_ids:
+                if not isinstance(x, (int, float)):
+                    continue
+                try:
+                    self.history_ids.add(int(x))
+                except (TypeError, ValueError):
+                    continue
+        history_names = data.get("history_names")
+        if isinstance(history_names, dict):
+            for k, v in history_names.items():
+                if not isinstance(v, str) or not v:
+                    continue
+                try:
+                    self.history_names[int(k)] = v
+                except (TypeError, ValueError):
+                    continue
+        history_items = data.get("history_items")
+        if isinstance(history_items, list):
+            self.history_items = [
+                item for item in history_items
+                if isinstance(item, dict) and item.get("product_id")
+            ]
+        refreshed = data.get("history_refreshed_at")
+        if isinstance(refreshed, (int, float)):
+            self.history_refreshed_at = float(refreshed)
 
     def save(self) -> None:
         with self._lock:
@@ -182,6 +225,10 @@ class Session:
                 "lon": self.lon,
                 "active_store_id": self.active_store_id,
                 "stores": self.stores,
+                "history_ids": sorted(self.history_ids),
+                "history_names": {str(k): v for k, v in self.history_names.items()},
+                "history_items": self.history_items,
+                "history_refreshed_at": self.history_refreshed_at,
                 "saved_at": time.time(),
             }
         try:
@@ -366,26 +413,90 @@ def _refresh_history(client: Client) -> None:
         return
     ids: set = set()
     names: Dict[int, str] = {}
+    aggregated: Dict[int, dict] = {}
     for order in orders or []:
         if order is None:
             continue
         for shipment in getattr(order, "shipments", None) or []:
+            window = getattr(shipment, "delivery_window", None)
+            # Даты у Order kuper_api не парсит: окно доставки остаётся
+            # единственным известным временем покупки.
+            when = getattr(window, "starts_at", None) if window else None
             for item in getattr(shipment, "line_items", None) or []:
                 oid = getattr(item, "offer_id", None)
                 nm = getattr(item, "name", "")
-                if oid:
-                    try:
-                        ids.add(int(oid))
-                        names[int(oid)] = nm
-                    except (TypeError, ValueError):
-                        continue
+                if not oid:
+                    continue
+                try:
+                    pid = int(oid)
+                except (TypeError, ValueError):
+                    continue
+                ids.add(pid)
+                if nm:
+                    names[pid] = nm
+                try:
+                    quantity = int(getattr(item, "quantity", 0) or 0)
+                except (TypeError, ValueError):
+                    quantity = 0
+                count = quantity if quantity > 0 else 1
+                price = getattr(item, "price", None)
+                entry = aggregated.get(pid)
+                if entry is None:
+                    aggregated[pid] = {
+                        "product_id": pid,
+                        "name": nm,
+                        "sku": getattr(item, "sku", None),
+                        "human_volume": getattr(item, "human_volume", None),
+                        "times_bought": count,
+                        "last_bought_at": when if isinstance(when, str) else None,
+                        "last_price": price if isinstance(price, (int, float)) else None,
+                    }
+                    continue
+                entry["times_bought"] += count
+                if nm:
+                    entry["name"] = nm
+                sku = getattr(item, "sku", None)
+                if sku:
+                    entry["sku"] = sku
+                volume = getattr(item, "human_volume", None)
+                if volume:
+                    entry["human_volume"] = volume
+                # Цена и дата — от самой свежей покупки; без даты берём
+                # последнюю увиденную цену.
+                known = entry.get("last_bought_at")
+                if isinstance(when, str) and (not known or when > known):
+                    entry["last_bought_at"] = when
+                    if isinstance(price, (int, float)):
+                        entry["last_price"] = price
+                elif not known and isinstance(price, (int, float)):
+                    entry["last_price"] = price
     _state.history_ids = ids
     _state.history_names = names
+    _state.history_items = sorted(
+        aggregated.values(), key=lambda e: (-e["times_bought"], e["name"])
+    )
     _state.history_refreshed_at = time.time()
     try:
         _state.save()
     except Exception:
         pass
+
+
+def _history_payload() -> dict:
+    """Полезная нагрузка истории для /history и /history/refresh."""
+    return {
+        "refreshed_at": _state.history_refreshed_at,
+        "count": len(_state.history_items),
+        "products": _state.history_items,
+    }
+
+
+def _ensure_history(client: Client) -> None:
+    """История обновляется по требованию, но не чаще HISTORY_TTL_SECONDS."""
+    refreshed = _state.history_refreshed_at
+    if refreshed and (time.time() - refreshed) < HISTORY_TTL_SECONDS:
+        return
+    _refresh_history(client)
 
 
 # -- API -------------------------------------------------------------------
@@ -495,6 +606,8 @@ def delete_session():
     _state.active_store_id = None
     _state.history_ids = set()
     _state.history_names = {}
+    _state.history_items = []
+    _state.history_refreshed_at = None
     try:
         if os.path.exists(STATE_FILE):
             os.remove(STATE_FILE)
@@ -545,11 +658,19 @@ def refresh_stores(payload: StoresRequest):
     }
 
 
+@app.get("/history")
+def get_history():
+    """Полная история покупок (с обновлением не чаще раза в 10 минут)."""
+    client = _require_session()
+    _ensure_history(client)
+    return _history_payload()
+
+
 @app.post("/history/refresh")
 def refresh_history():
     client = _require_session()
     _refresh_history(client)
-    return {"ok": True, "items": len(_state.history_ids), "names": list(_state.history_names.values())[:20]}
+    return {"ok": True, **_history_payload()}
 
 
 def _search_candidates(client, store_id: int, raw_query: str) -> List[dict]:
@@ -577,21 +698,66 @@ def _search_candidates(client, store_id: int, raw_query: str) -> List[dict]:
     return candidates
 
 
+def _prefer_items(payload: BaseModel) -> List[dict]:
+    """Предпочтения из запроса; если их нет — сохранённая история бриджа."""
+    if payload.prefer is not None:
+        return [
+            {"product_id": p.product_id, "name": p.name, "times_bought": p.times_bought}
+            for p in payload.prefer
+        ]
+    if _state.history_items:
+        return list(_state.history_items)
+    return [
+        {"product_id": pid, "name": nm, "times_bought": 0}
+        for pid, nm in _state.history_names.items()
+    ]
+
+
+def _candidates_with_preferences(
+    client, store_id: int, raw_query: str, prefer: List[dict]
+):
+    """Кандидаты каталога плюс точечный поиск сильных предпочтений.
+
+    Двухфазный подбор: если запрос совпал с локальным списком предпочтений
+    (фаза 1), а нужного товара в обычной выдаче нет — ищем его отдельным
+    запросом по названию предпочтения (фаза 2). Возвращает
+    (кандидаты, совпадения).
+    """
+    candidates = _search_candidates(client, store_id, raw_query)
+    matched = matcher.match_preferences(raw_query, prefer)
+    if not matched:
+        return candidates, matched
+    known = {c.get("product_id") for c in candidates}
+    if any(m["product_id"] in known for m in matched):
+        return candidates, matched
+    for m in matched[: matcher.PREFER_LOOKUP_LIMIT]:
+        try:
+            extra = _search_candidates(client, store_id, m["name"])
+        except HTTPException:
+            continue
+        for c in extra:
+            if c.get("product_id") is not None and c["product_id"] not in known:
+                candidates.append(c)
+                known.add(c["product_id"])
+    return candidates, matched
+
+
 @app.post("/resolve")
 def resolve_items(payload: ResolveRequest):
     client = _require_session()
     store_id = _require_store()
-    _refresh_history(client)
+    prefer = _prefer_items(payload)
 
     results = []
     for item in payload.items:
         normalized = matcher.normalize_name(item.name)
-        candidates = _search_candidates(client, store_id, item.name)
+        candidates, matched = _candidates_with_preferences(client, store_id, item.name, prefer)
         decision = matcher.pick_best(
             item.name,
             candidates,
-            previously_bought_ids=_state.history_ids,
-            previously_bought_names=_state.history_names,
+            previously_bought_ids={p["product_id"] for p in prefer},
+            previously_bought_names={p["product_id"]: p.get("name", "") for p in prefer},
+            preferred_ids={m["product_id"] for m in matched} if matched else set(),
             alternatives_limit=ALTERNATIVES_LIMIT,
         )
         results.append(
@@ -610,12 +776,15 @@ def resolve_items(payload: ResolveRequest):
     return {"items": results}
 
 
-def _refine_decision(query: str, candidates: List[dict]) -> dict:
+def _refine_decision(query: str, candidates: List[dict], prefer: List[dict]) -> dict:
     return matcher.pick_best(
         query,
         candidates,
-        previously_bought_ids=_state.history_ids,
-        previously_bought_names=_state.history_names,
+        previously_bought_ids={p["product_id"] for p in prefer},
+        previously_bought_names={p["product_id"]: p.get("name", "") for p in prefer},
+        preferred_ids={
+            m["product_id"] for m in matcher.match_preferences(query, prefer)
+        },
         alternatives_limit=ALTERNATIVES_LIMIT,
         # Запрос написан пользователем и может быть фильтром («без сахара»),
         # поэтому любое совпадение уже подходит: ранжируем, а не отсекаем.
@@ -629,8 +798,10 @@ def search_products(payload: SearchRequest):
     client = _require_session()
     store_id = payload.store_id or _require_store()
     query = payload.query.strip()
+    prefer = _prefer_items(payload)
 
-    decision = _refine_decision(query, _search_candidates(client, store_id, query))
+    candidates, _ = _candidates_with_preferences(client, store_id, query, prefer)
+    decision = _refine_decision(query, candidates, prefer)
     fallback_token = None
     if not decision["product"]:
         # Уточнение бывает слишком узким для каталога («огурец засоленный»):
@@ -638,7 +809,10 @@ def search_products(payload: SearchRequest):
         tokens = (matcher.normalize_name(query) or query).split()
         if tokens and tokens[0] != matcher.normalize_name(query):
             fallback_token = tokens[0]
-            decision = _refine_decision(query, _search_candidates(client, store_id, fallback_token))
+            fb_candidates, _ = _candidates_with_preferences(
+                client, store_id, fallback_token, prefer
+            )
+            decision = _refine_decision(query, fb_candidates, prefer)
 
     return {
         "query": query,

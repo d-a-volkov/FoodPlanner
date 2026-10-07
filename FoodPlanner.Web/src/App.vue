@@ -5,7 +5,8 @@ const navItems = [
   { path: '/products', label: 'Продукты', shortLabel: 'Продукты', icon: '🥬' },
   { path: '/harvard-plate', label: 'Гарвардская тарелка', shortLabel: 'Тарелка', icon: '🍽' },
   { path: '/recipes', label: 'Рецепты', shortLabel: 'Рецепты', icon: '📖' },
-  { path: '/shopping-list', label: 'Списки покупок', shortLabel: 'Покупки', icon: '🛒' }
+  { path: '/shopping-list', label: 'Списки покупок', shortLabel: 'Покупки', icon: '🛒' },
+  { path: '/kuper-preferences', label: 'Предпочтения', shortLabel: 'Предпочтения', icon: '⭐' }
 ]
 
 const offline = ref(false)

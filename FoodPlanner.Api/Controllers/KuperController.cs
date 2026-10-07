@@ -15,11 +15,16 @@ public class KuperController : ControllerBase
 {
     private readonly IKuperService _kuper;
     private readonly IShoppingListService _lists;
+    private readonly IKuperPreferencesService _prefs;
 
-    public KuperController(IKuperService kuper, IShoppingListService lists)
+    public KuperController(
+        IKuperService kuper,
+        IShoppingListService lists,
+        IKuperPreferencesService prefs)
     {
         _kuper = kuper;
         _lists = lists;
+        _prefs = prefs;
     }
 
     [HttpGet("status")]
@@ -69,7 +74,8 @@ public class KuperController : ControllerBase
         if (items == null || items.Count == 0)
             return BadRequest(new { error = "РќРµ СѓРєР°Р·Р°РЅС‹ РїСѓРЅРєС‚С‹ РґР»СЏ РїРѕРґР±РѕСЂР°" });
 
-        return await Proxy(() => _kuper.ResolveAsync(new KuperResolveRequest { Items = items }));
+        request.Prefer ??= await _prefs.GetActiveRefsAsync();
+        return await Proxy(() => _kuper.ResolveAsync(new KuperResolveRequest { Items = items, Prefer = request.Prefer }));
     }
 
     [HttpPost("search")]
@@ -78,6 +84,7 @@ public class KuperController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Query))
             return BadRequest(new { error = "Введите уточняющий запрос" });
 
+        request.Prefer ??= await _prefs.GetActiveRefsAsync();
         return await Proxy(() => _kuper.SearchAsync(request));
     }
 

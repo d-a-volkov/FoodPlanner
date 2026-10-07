@@ -18,6 +18,8 @@ builder.Services.AddSingleton<IJsonStorageService<ShoppingList>>(new JsonStorage
     Path.Combine(dataPath, "shoppinglists.json")));
 builder.Services.AddSingleton<IJsonStorageService<CustomCategory>>(new JsonStorageService<CustomCategory>(
     Path.Combine(dataPath, "categories.json")));
+builder.Services.AddSingleton<IJsonStorageService<KuperPreferences>>(new JsonStorageService<KuperPreferences>(
+    Path.Combine(dataPath, "kuperpreferences.json")));
 
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
@@ -28,6 +30,7 @@ builder.Services.AddScoped<IExternalRecipeService, ExternalRecipeService>();
 
 builder.Services.Configure<KuperOptions>(builder.Configuration.GetSection(KuperOptions.SectionName));
 builder.Services.AddScoped<IKuperService, KuperService>();
+builder.Services.AddScoped<IKuperPreferencesService, KuperPreferencesService>();
 var kuperBridgeUrl = builder.Configuration.GetValue<string>($"Kuper:{nameof(KuperOptions.BridgeUrl)}")
     ?? "http://localhost:8082";
 builder.Services.AddHttpClient("KuperBridge", client =>

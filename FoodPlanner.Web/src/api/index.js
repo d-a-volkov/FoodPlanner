@@ -56,6 +56,8 @@ export const shoppingListsApi = {
     return api.post('/shoppinglists/from-out-of-stock', null, { params })
   },
   merge: (list1, list2) => api.post(`/shoppinglists/merge?list1=${list1}&list2=${list2}`),
+  rename: (id, name) => api.put(`/shoppinglists/${id}/name`, { name }),
+  syncStock: (id, includeLowStock = false) => api.post(`/shoppinglists/${id}/sync-stock`, null, { params: { includeLowStock } }),
   togglePurchased: (listId, itemId) => api.put(`/shoppinglists/${listId}/items/${itemId}/toggle`),
   delete: (id) => api.delete(`/shoppinglists/${id}`),
   deleteItem: (listId, itemId) => api.delete(`/shoppinglists/${listId}/items/${itemId}`)
@@ -68,6 +70,10 @@ export const kuperApi = {
   selectStore: (storeId) => api.post('/kuper/session/store', { storeId }),
   refreshStores: (lat, lon, wide = true) => api.post('/kuper/stores', { lat, lon, wide }),
   refreshHistory: () => api.post('/kuper/history/refresh'),
+  getPreferences: (includeHidden = false) => api.get('/kuper/preferences', { params: { includeHidden } }),
+  syncPreferences: () => api.post('/kuper/preferences/sync'),
+  removePreference: (productId) => api.delete(`/kuper/preferences/${productId}`),
+  restorePreference: (productId) => api.post(`/kuper/preferences/${productId}/restore`),
   resolve: (listId) => api.post('/kuper/resolve', { listId }),
   search: (query, storeId) => api.post('/kuper/search', { query, storeId }),
   addToCart: (items) => api.post('/kuper/cart', { items }),

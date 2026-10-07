@@ -73,6 +73,22 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
     if (list) list.items = list.items.filter(i => i.id !== itemId)
   }
 
+  async function renameList(id, name) {
+    const { data } = await shoppingListsApi.rename(id, name)
+    const list = lists.value.find(l => l.id === id)
+    if (list) list.name = data.name
+    if (currentList.value?.id === id) currentList.value.name = data.name
+    return data
+  }
+
+  async function syncStock(listId, includeLowStock = false) {
+    const { data } = await shoppingListsApi.syncStock(listId, includeLowStock)
+    const list = lists.value.find(l => l.id === listId)
+    if (list) list.items = data.list.items
+    if (currentList.value?.id === listId) currentList.value = data.list
+    return data
+  }
+
   async function deleteList(id) {
     await shoppingListsApi.delete(id)
     lists.value = lists.value.filter(l => l.id !== id)
@@ -81,6 +97,6 @@ export const useShoppingListsStore = defineStore('shoppingLists', () => {
 
   return {
     lists, currentList, loading, error,
-    fetchLists, silentFetchLists, fetchList, createFromRecipe, createFromOutOfStock, togglePurchased, removeItem, deleteList
+    fetchLists, silentFetchLists, fetchList, createFromRecipe, createFromOutOfStock, togglePurchased, removeItem, renameList, syncStock, deleteList
   }
 })

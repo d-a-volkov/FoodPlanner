@@ -78,11 +78,21 @@ public class KuperService : IKuperService
 
     public Task<string> RefreshHistoryAsync() => SendAsync(HttpMethod.Post, "/history/refresh", new { });
 
+    public Task<string> GetHistoryAsync() => SendAsync(HttpMethod.Get, "/history");
+
     public Task<string> ResolveAsync(KuperResolveRequest request)
-        => SendAsync(HttpMethod.Post, "/resolve", new { items = request.Items });
+    {
+        if (request.Prefer == null)
+            return SendAsync(HttpMethod.Post, "/resolve", new { items = request.Items });
+        return SendAsync(HttpMethod.Post, "/resolve", new { items = request.Items, prefer = request.Prefer });
+    }
 
     public Task<string> SearchAsync(KuperSearchRequest request)
-        => SendAsync(HttpMethod.Post, "/search", new { query = request.Query, store_id = request.StoreId });
+    {
+        if (request.Prefer == null)
+            return SendAsync(HttpMethod.Post, "/search", new { query = request.Query, store_id = request.StoreId });
+        return SendAsync(HttpMethod.Post, "/search", new { query = request.Query, store_id = request.StoreId, prefer = request.Prefer });
+    }
 
     public Task<string> AddToCartAsync(KuperCartRequest request)
     {

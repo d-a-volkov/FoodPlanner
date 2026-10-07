@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { ref, watch, computed } from 'vue'
 import { useKuperStore } from '../stores/kuper'
+import { useKuperPreferencesStore } from '../stores/kuperPreferences'
 import { kuperApi } from '../api'
 import { KUPER_CITIES, DEFAULT_CITY } from '../constants/kuperCities'
 
@@ -11,6 +12,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const store = useKuperStore()
+const prefs = useKuperPreferencesStore()
 
 const step = ref('connect') // connect | store | resolve | result
 const sessionCookie = ref('')
@@ -22,7 +24,6 @@ const wideSearch = ref(true)
 const storesLoading = ref(false)
 const resolving = ref(false)
 const adding = ref(false)
-const historySynced = ref(false)
 const error = ref('')
 const rows = ref([])
 const result = ref(null)
@@ -241,10 +242,7 @@ async function resolveItems() {
   error.value = ''
   resolving.value = true
   try {
-    if (!historySynced.value) {
-      await store.refreshHistory()
-      historySynced.value = true
-    }
+    await prefs.ensureFresh()
   } catch (e) { /* предпочтения из истории — опционально */ }
 
   try {
@@ -261,6 +259,7 @@ async function resolveItems() {
       quantityNote: d.source?.quantity_note || '',
       chosen: d.product,
       isPreviousBuy: !!d.is_previous_buy,
+      isPreferred: !!d.is_preferred,
       isReplacement: !!d.is_replacement,
       reason: d.reason,
       alternatives: d.alternatives || [],
@@ -556,6 +555,7 @@ async function resetSession() {
                     <span v-if="row.chosen.human_volume" class="kup-volume">{{ row.chosen.human_volume }}</span>
                   </div>
                   <div class="kup-prod-meta">
+                    <span v-if="row.isPreferred" class="kup-badge pref" title="Совпало с вашими предпочтениями из истории покупок">⭐ предпочтение</span>
                     <span class="kup-badge" :class="row.isPreviousBuy ? 'prev' : (row.isReplacement ? 'repl' : 'match')">
                       {{ row.isPreviousBuy ? '✓ покупали ранее' : (row.isReplacement ? '🔁 замена' : '✓ по названию') }}
                     </span>
@@ -913,6 +913,7 @@ async function resetSession() {
   border-radius: 20px;
   font-weight: 600;
 }
+.kup-badge.pref { background: #fff8e1; color: #f9a825; border: 1px solid #f9a825; }
 .kup-badge.prev { background: #e8f5e9; color: #2e7d32; }
 .kup-badge.repl { background: #fff3e0; color: #e65100; }
 .kup-badge.match { background: #e3f2fd; color: #1565c0; }

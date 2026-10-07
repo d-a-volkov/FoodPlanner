@@ -40,6 +40,9 @@ public class KuperResolveRequest
 {
     public Guid? ListId { get; set; }
     public List<KuperResolveItem>? Items { get; set; }
+
+    /// <summary>Список предпочтений из истории покупок (id + имя для подбора).</summary>
+    public List<KuperPreferRef>? Prefer { get; set; }
 }
 
 /// <summary>Уточняющий поиск по одному товару: «кофе растворимый 250 г».</summary>
@@ -47,6 +50,9 @@ public class KuperSearchRequest
 {
     public string Query { get; set; } = string.Empty;
     public int? StoreId { get; set; }
+
+    /// <summary>Список предпочтений из истории покупок (id + имя для подбора).</summary>
+    public List<KuperPreferRef>? Prefer { get; set; }
 }
 
 /// <summary>Товар для добавления в корзину Купера.</summary>

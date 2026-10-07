@@ -28,6 +28,12 @@ const routes = [
     name: 'ShoppingList',
     component: () => import('../views/ShoppingList.vue'),
     meta: { title: 'Списки покупок', icon: '🛒' }
+  },
+  {
+    path: '/kuper-preferences',
+    name: 'KuperPreferences',
+    component: () => import('../views/KuperPreferences.vue'),
+    meta: { title: 'Предпочтения', icon: '⭐' }
   }
 ]
 

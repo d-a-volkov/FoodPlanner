@@ -117,6 +117,10 @@ _ENDINGS = (
 MIN_OVERLAP = 0.5
 #: Сколько альтернатив возвращать по умолчанию.
 DEFAULT_ALTERNATIVES = 10
+#: Совпадение, с которым запрос считается «своим» для списка предпочтений.
+PREFER_MIN_OVERLAP = 0.5
+#: Сколько предпочтений проверять точечным запросом по названию в каталоге.
+PREFER_LOOKUP_LIMIT = 1
 
 
 def _stem(token: str) -> str:
@@ -258,12 +262,51 @@ def score_candidate(
     return score
 
 
+def match_preferences(
+    item_name: str,
+    prefer_items: Optional[Sequence[dict]] = None,
+    *,
+    min_overlap: float = PREFER_MIN_OVERLAP,
+) -> List[dict]:
+    """Сильные совпадения запроса с локальным списком предпочтений.
+
+    Первая фаза двухфазного подбора: запрос сопоставляется с названиями
+    продуктов из истории покупок, каталог при этом ещё не трогается.
+    Возвращает совпадения, отсортированные по совпадению, затем по числу
+    покупок.
+    """
+    matches: List[dict] = []
+    for pref in prefer_items or []:
+        pid = pref.get("product_id")
+        name = pref.get("name") or ""
+        if not pid or not name:
+            continue
+        overlap = token_overlap(item_name, name)
+        if overlap < min_overlap:
+            continue
+        try:
+            times_bought = int(pref.get("times_bought") or 0)
+        except (TypeError, ValueError):
+            times_bought = 0
+        matches.append(
+            {
+                "product_id": int(pid),
+                "name": name,
+                "overlap": round(overlap, 2),
+                "times_bought": times_bought,
+            }
+        )
+    matches.sort(key=lambda m: (-m["overlap"], -m["times_bought"], m["name"]))
+    return matches
+
+
 def pick_best(
     item_name: str,
     candidates: List[dict],
     *,
     previously_bought_ids: Optional[set] = None,
     previously_bought_names: Optional[Dict[int, str]] = None,
+    preferred_ids: Optional[set] = None,
     alternatives_limit: int = DEFAULT_ALTERNATIVES,
     min_overlap: float = MIN_OVERLAP,
 ) -> dict:
@@ -272,9 +315,14 @@ def pick_best(
     Если ни один товар не достигает ``min_overlap``, основной выбор пустой
     (``product is None``) — товар подбирается вручную из альтернатив.
     Такой товар никогда не подставляется молча: нулевое совпадение = 0 баллов.
+
+    ``preferred_ids`` — идентификаторы из списка предпочтений, признанные
+    ``match_preferences`` по этому запросу: они идут впереди любого другого
+    правила, включая точное совпадение названия из каталога.
     """
     prev_ids = previously_bought_ids or set()
     prev_names = previously_bought_names or {}
+    pref_ids = preferred_ids or set()
     # Отсутствующий товар нельзя подставлять: если в наличии есть хоть один
     # кандидат, отсутствующие отбрасываются полностью.
     in_stock = [c for c in candidates if c.get("available", True)]
@@ -295,7 +343,7 @@ def pick_best(
             total=total,
         )
         price = cand.get("price")
-        ranked.append((score, -index, float(price) if isinstance(price, (int, float)) else 1e9, cand, is_prev, prev_name))
+        ranked.append((score, -index, float(price) if isinstance(price, (int, float)) else 1e9, cand, is_prev, prev_name, pid in pref_ids))
 
     # Сортировка: сначала балл, потом позиция выдачи Купера, потом цена.
     ranked.sort(key=lambda r: (-r[0], -r[1], r[2]))
@@ -305,19 +353,32 @@ def pick_best(
             "product": None,
             "score": 0.0,
             "is_previous_buy": False,
+            "is_preferred": False,
             "is_replacement": False,
             "reason": "ничего не найдено",
             "alternatives": [],
         }
 
+    # Предпочтения из истории покупок (фаза двухфазного подбора) важнее
+    # любого другого правила — каталог ищется по запросу, а совпало
+    # локальное название, значит это тот самый продукт.
+    pref_rows = [
+        r for r in ranked
+        if r[6] and token_overlap(item_name, r[3].get("name", "")) >= min_overlap
+    ]
+
     # Товар с названием, совпадающим с запросом, предпочтительнее любого
     # расширенного названия («Кофе» вместо «Кофе арабика 250 г»).
+    # Правило действует на остаток: предпочтение его не перебивает.
     wanted = normalize_name(item_name)
-    exact_rows = [r for r in ranked if wanted and normalize_name(r[3].get("name", "")) == wanted]
-    if exact_rows:
+    rest = [r for r in ranked if r not in pref_rows]
+    exact_rows = [r for r in rest if wanted and normalize_name(r[3].get("name", "")) == wanted]
+    if pref_rows:
+        ranked = pref_rows + exact_rows + [r for r in rest if r not in exact_rows]
+    elif exact_rows:
         ranked = exact_rows + [r for r in ranked if r not in exact_rows]
 
-    best_score, _, _, best_cand, best_prev, _ = ranked[0]
+    best_score, _, _, best_cand, best_prev, _, best_pref = ranked[0]
     best_overlap = token_overlap(item_name, best_cand.get("name", ""))
 
     def _alts(rows: Sequence[tuple]) -> List[dict]:
@@ -327,7 +388,7 @@ def pick_best(
                 "score": round(s, 1),
                 "overlap": round(token_overlap(item_name, c.get("name", "")), 2),
             }
-            for s, _, _, c, _, _ in rows[:alternatives_limit]
+            for s, _, _, c, _, _, _ in rows[:alternatives_limit]
         ]
 
     if best_overlap < min_overlap:
@@ -336,6 +397,7 @@ def pick_best(
             "product": None,
             "score": round(best_score, 1),
             "is_previous_buy": False,
+            "is_preferred": False,
             "is_replacement": False,
             "reason": "ничего не найдено",
             "alternatives": _alts(ranked),
@@ -344,8 +406,13 @@ def pick_best(
     alternatives = _alts([r for r in ranked[1:] if token_overlap(item_name, r[3].get("name", "")) > 0])
 
     is_prev = bool(best_prev)
+    is_preferred = bool(best_pref)
     is_replacement = bool(not is_prev and best_overlap < 1.0)
-    if best_overlap >= 1.0 and is_prev:
+    if is_preferred and best_overlap >= 1.0:
+        reason = "предпочтение из истории покупок: точное совпадение"
+    elif is_preferred:
+        reason = "предпочтение из истории покупок"
+    elif best_overlap >= 1.0 and is_prev:
         reason = "найдено точное совпадение, покупали ранее"
     elif best_overlap >= 1.0:
         reason = "найдено точное совпадение названия"
@@ -358,6 +425,7 @@ def pick_best(
         "product": best_cand,
         "score": round(best_score, 1),
         "is_previous_buy": is_prev,
+        "is_preferred": is_preferred,
         "is_replacement": is_replacement,
         "reason": reason,
         "alternatives": alternatives,

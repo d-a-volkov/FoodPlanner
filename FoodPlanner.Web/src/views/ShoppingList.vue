@@ -72,6 +72,61 @@ const includeLow = ref(localStorage.getItem('includeLowStock') === '1')
 const selectedCategories = ref(new Set())
 const categoriesCollapsed = ref(localStorage.getItem('collapsedCategoriesList') === '1')
 
+const editingId = ref(null)
+const editingName = ref('')
+
+function startRename(list) {
+  editingId.value = list.id
+  editingName.value = list.name
+}
+
+function cancelRename() {
+  editingId.value = null
+  editingName.value = ''
+}
+
+async function saveRename() {
+  const id = editingId.value
+  if (id == null) return
+  const name = editingName.value.trim()
+  editingId.value = null
+  editingName.value = ''
+  if (!name) return
+  try {
+    await store.renameList(id, name)
+  } catch (e) {
+    alert(e.response?.data?.error || e.message)
+  }
+}
+
+const syncing = ref(false)
+const syncNote = ref('')
+const syncIncludeLow = ref(false)
+
+async function syncStock() {
+  const list = showDetail.value
+  if (!list) return
+  syncing.value = true
+  syncNote.value = ''
+  try {
+    const result = await store.syncStock(list.id, syncIncludeLow.value)
+    const parts = []
+    if (result.markedPurchased) parts.push(`отмечено купленным: ${result.markedPurchased}`)
+    if (result.statusFixed) parts.push(`статусов «В наличии»: ${result.statusFixed}`)
+    if (result.added) parts.push(`добавлено: ${result.added}`)
+    syncNote.value = parts.length
+      ? `Синхронизировано — ${parts.join('; ')}.`
+      : 'Всё уже в порядке.'
+    const fresh = store.lists.find(l => l.id === list.id)
+    if (fresh) showDetail.value = fresh
+    await productsStore.fetchProducts()
+  } catch (e) {
+    syncNote.value = e.response?.data?.error || e.message
+  } finally {
+    syncing.value = false
+  }
+}
+
 // логические группы категорий, каждая сворачивается независимо
 const CATEGORY_GROUPS = [
   { key: 'produce', label: 'Овощи, фрукты, зелень', ids: ['0', '1', '2'] },
@@ -316,7 +371,17 @@ function exportToTxt(list) {
           @click="openDetail(list)"
         >
           <div class="list-card-header">
-            <span class="list-name">{{ list.name }}</span>
+            <input
+              v-if="editingId === list.id"
+              v-model="editingName"
+              class="rename-input"
+              @click.stop
+              @keyup.enter="saveRename"
+              @keyup.esc="cancelRename"
+            />
+            <span v-else class="list-name">{{ list.name }}</span>
+            <button v-if="editingId === list.id" class="btn-remove" title="Сохранить" @click.stop="saveRename">✓</button>
+            <button v-else class="btn-remove" title="Переименовать" @click.stop="startRename(list)">✏</button>
             <button class="btn-remove" @click.stop="removeList(list.id)">✕</button>
           </div>
           <div class="list-date">{{ new Date(list.createdDate).toLocaleDateString('ru-RU') }}</div>
@@ -331,8 +396,27 @@ function exportToTxt(list) {
 
       <div v-if="showDetail" class="list-detail">
         <div class="detail-top">
-          <h2>{{ showDetail.name }}</h2>
+          <div class="detail-title">
+            <input
+              v-if="editingId === showDetail.id"
+              v-model="editingName"
+              class="rename-input rename-input-lg"
+              @keyup.enter="saveRename"
+              @keyup.esc="cancelRename"
+            />
+            <template v-else>
+              <h2>{{ showDetail.name }}</h2>
+              <button class="btn-title-edit" title="Переименовать" @click="startRename(showDetail)">✏</button>
+            </template>
+          </div>
           <div class="detail-top-actions">
+            <button class="btn btn-small btn-primary" :disabled="syncing" @click="syncStock" title="Синхронизировать список и каталог по наличию продуктов">
+              {{ syncing ? 'Синхронизация...' : '🔄 Синхронизировать' }}
+            </button>
+            <label class="sync-low" title="Также учитывать продукты со статусом «Мало»">
+              <input v-model="syncIncludeLow" type="checkbox" />
+              «Мало»
+            </label>
             <button class="btn btn-small" @click="exportToTxt(showDetail)">⬇ TXT</button>
             <button
               class="btn btn-small btn-primary"
@@ -344,6 +428,7 @@ function exportToTxt(list) {
             </button>
           </div>
         </div>
+        <p v-if="syncNote" class="sync-note">{{ syncNote }}</p>
         <div class="detail-date">Создан: {{ new Date(showDetail.createdDate).toLocaleDateString('ru-RU') }}</div>
 
         <div class="detail-progress">
@@ -672,6 +757,53 @@ h2 { margin-top: 0; }
   padding: 2px 6px;
 }
 .btn-remove:hover { color: #f44336; }
+
+.rename-input {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 2px 6px;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.rename-input-lg { font-size: 1.1rem; font-weight: 600; flex: none; width: 100%; max-width: 380px; }
+
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.btn-title-edit {
+  background: none;
+  border: none;
+  color: #bbb;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.btn-title-edit:hover { color: #1976d2; }
+
+.sync-low {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #666;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sync-low input { margin: 0; cursor: pointer; }
+
+.sync-note {
+  font-size: 0.85rem;
+  color: #4caf50;
+  margin: 8px 0 0;
+}
 
 .empty-detail {
   display: flex;

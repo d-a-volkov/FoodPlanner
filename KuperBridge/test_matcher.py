@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from matcher import normalize_name, pick_best, token_overlap
+from matcher import match_preferences, normalize_name, pick_best, token_overlap
 
 
 def cand(pid, name, price=100):
@@ -134,6 +134,72 @@ class PickBestTests(unittest.TestCase):
         # Ноль совпадений не подходит даже в уточняющем поиске.
         candidates = [cand(1, "Хлеб Бородинский 400 г", 60)]
         self.assertIsNone(pick_best("яйцо с1", candidates, min_overlap=0.01)["product"])
+
+
+class MatchPreferencesTests(unittest.TestCase):
+    def test_ignores_unrelated(self):
+        prefs = [{"product_id": 1, "name": "Морковь свежая", "times_bought": 2}]
+        self.assertEqual(match_preferences("молоко", prefs), [])
+
+    def test_sorts_by_overlap_then_times_bought(self):
+        prefs = [
+            {"product_id": 10, "name": "Кофе растворимый 95 г", "times_bought": 1},
+            {"product_id": 11, "name": "Кофе арабика молотый 250 г", "times_bought": 5},
+            {"product_id": 12, "name": "Кофе", "times_bought": 2},
+        ]
+        matched = match_preferences("кофе", prefs)
+        # Все совпадают полностью, дальше побеждает число покупок.
+        self.assertEqual([m["product_id"] for m in matched], [11, 12, 10])
+
+    def test_filters_below_overlap_threshold(self):
+        prefs = [{"product_id": 5, "name": "Сыр Российский 200 г", "times_bought": 3}]
+        self.assertEqual(match_preferences("сыр твёрдый гауда", prefs), [])
+
+    def test_empty_input(self):
+        self.assertEqual(match_preferences("", []), [])
+        self.assertEqual(match_preferences("молоко", None), [])
+
+
+class PreferencePickTests(unittest.TestCase):
+    def test_preferred_beats_exact_name(self):
+        # Правило «точное название из каталога» уступает предпочтению.
+        candidates = [cand(1, "Кофе", 150), cand(2, "Кофе арабика 250 г", 300)]
+        decision = pick_best("кофе", candidates, preferred_ids={2})
+        self.assertEqual(decision["product"]["product_id"], 2)
+        self.assertTrue(decision["is_preferred"])
+
+    def test_unavailable_preferred_is_skipped(self):
+        candidates = [
+            {**cand(2, "Кофе арабика 250 г", 300), "available": False},
+            cand(1, "Кофе", 150),
+        ]
+        decision = pick_best("кофе", candidates, preferred_ids={2})
+        self.assertEqual(decision["product"]["product_id"], 1)
+        self.assertFalse(decision["is_preferred"])
+
+    def test_weak_overlap_preferred_does_not_win(self):
+        candidates = [cand(2, "Сыр Российский 200 г", 200), cand(1, "Сыр твёрдый Гауда", 450)]
+        decision = pick_best("сыр твёрдый гауда", candidates, preferred_ids={2})
+        self.assertEqual(decision["product"]["product_id"], 1)
+        self.assertFalse(decision["is_preferred"])
+
+    def test_marks_previous_buy_and_preferred_together(self):
+        decision = pick_best(
+            "кофе", [cand(7, "Кофе Tchibo Gold", 250)],
+            previously_bought_ids={7}, preferred_ids={7},
+        )
+        self.assertTrue(decision["is_previous_buy"])
+        self.assertTrue(decision["is_preferred"])
+        self.assertIn("предпочтение", decision["reason"])
+
+    def test_no_preference_keeps_old_flags(self):
+        decision = pick_best("кофе", [cand(1, "Кофе", 150)])
+        self.assertFalse(decision["is_preferred"])
+        self.assertFalse(decision["is_previous_buy"])
+
+    def test_empty_pick_keeps_preferred_flag(self):
+        decision = pick_best("кофе", [])
+        self.assertFalse(decision["is_preferred"])
 
 
 if __name__ == "__main__":

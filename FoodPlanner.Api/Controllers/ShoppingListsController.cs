@@ -72,6 +72,25 @@ public class ShoppingListsController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
+    [HttpPut("{listId:guid}/name")]
+    public async Task<ActionResult<ShoppingList>> Rename(Guid listId, [FromBody] ShoppingListRenameRequest request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Name?.Trim()))
+            return BadRequest(new { error = "Название не может быть пустым" });
+
+        try { return Ok(await _service.RenameAsync(listId, request.Name)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPost("{listId:guid}/sync-stock")]
+    public async Task<ActionResult<ShoppingListSyncResult>> SyncStock(Guid listId,
+        [FromQuery] bool includeLowStock = false)
+    {
+        try { return Ok(await _service.SyncStockAsync(listId, includeLowStock)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
     [HttpPut("{listId:guid}/items/{itemId:guid}/toggle")]
     public async Task<ActionResult<ShoppingItem>> TogglePurchased(Guid listId, Guid itemId)
     {

@@ -150,6 +150,85 @@ public class ShoppingListService : IShoppingListService
         return await _storage.CreateAsync(merged);
     }
 
+    public async Task<ShoppingList> RenameAsync(Guid listId, string name)
+    {
+        var nameValue = name?.Trim();
+        if (string.IsNullOrWhiteSpace(nameValue))
+            throw new ArgumentException("Название не может быть пустым");
+
+        var lists = await _storage.GetAllAsync();
+        var list = lists.FirstOrDefault(l => l.Id == listId)
+            ?? throw new KeyNotFoundException($"Список {listId} не найден");
+
+        list.Name = nameValue;
+        await _storage.SaveAllAsync(lists);
+        return list;
+    }
+
+    public async Task<ShoppingListSyncResult> SyncStockAsync(Guid listId, bool includeLowStock)
+    {
+        var lists = await _storage.GetAllAsync();
+        var list = lists.FirstOrDefault(l => l.Id == listId)
+            ?? throw new KeyNotFoundException($"Список {listId} не найден");
+
+        var products = await _productService.GetAllAsync();
+        var byId = products.ToDictionary(p => p.Id);
+        var inStockIds = products
+            .Where(p => p.StockStatus == StockStatus.InStock || p.HasReserve)
+            .Select(p => p.Id)
+            .ToHashSet();
+        var endedIds = products
+            .Where(p => p.StockStatus == StockStatus.OutOfStock ||
+                        (includeLowStock && p.StockStatus == StockStatus.LowStock))
+            .Select(p => p.Id)
+            .ToHashSet();
+
+        var result = new ShoppingListSyncResult();
+
+        foreach (var item in list.Items.Where(i => !i.IsPurchased && inStockIds.Contains(i.ProductId)))
+        {
+            item.IsPurchased = true;
+            result.MarkedPurchased++;
+        }
+
+        var fixedProducts = new List<Product>();
+        foreach (var item in list.Items.Where(i => i.IsPurchased))
+        {
+            if (byId.TryGetValue(item.ProductId, out var product) &&
+                (product.StockStatus == StockStatus.OutOfStock ||
+                 (includeLowStock && product.StockStatus == StockStatus.LowStock)))
+            {
+                product.StockStatus = StockStatus.InStock;
+                fixedProducts.Add(product);
+                result.StatusFixed++;
+            }
+        }
+
+        foreach (var productId in endedIds)
+        {
+            if (list.Items.Any(i => i.ProductId == productId)) continue;
+            if (!byId.TryGetValue(productId, out var product)) continue;
+
+            list.Items.Add(new ShoppingItem
+            {
+                ProductId = productId,
+                ProductName = product.Name,
+                Amount = product.StockStatus == StockStatus.LowStock ? 0 : 1,
+                Unit = product.DefaultUnit,
+                IsPurchased = false,
+                SourceRecipeName = null
+            });
+            result.Added++;
+        }
+
+        foreach (var product in fixedProducts)
+            await _productService.UpdateAsync(product);
+        await _storage.SaveAllAsync(lists);
+
+        result.List = list;
+        return result;
+    }
+
     public async Task<ShoppingItem> TogglePurchasedAsync(Guid listId, Guid itemId)
     {
         var lists = await _storage.GetAllAsync();
