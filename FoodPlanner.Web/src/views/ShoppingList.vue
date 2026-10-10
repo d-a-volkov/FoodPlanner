@@ -646,7 +646,7 @@ h2 { margin-top: 0; }
   justify-content: space-between;
   align-items: center;
 }
-.list-name { font-weight: 600; font-size: 0.95rem; }
+.list-name { font-weight: 600; font-size: 0.95rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .list-date { font-size: 0.8rem; color: #999; margin: 4px 0 8px; }
 .list-progress { display: flex; align-items: center; gap: 8px; }
 .progress-text { font-size: 0.8rem; color: #666; }
@@ -861,7 +861,15 @@ h2 { margin-top: 0; }
   }
 
   .list-detail { padding: 16px; }
-  .detail-top { align-items: flex-start; }
+  .detail-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .detail-title { width: 100%; }
+  .detail-top h2 { font-size: 1.15rem; }
+  .detail-top-actions { width: 100%; }
+  .sync-low { flex-shrink: 0; }
   .detail-top .btn { padding: 8px 12px; font-size: 13px; flex-shrink: 0; }
   .item-info { flex-wrap: wrap; row-gap: 2px; }
   .item-source { flex-basis: 100%; }
